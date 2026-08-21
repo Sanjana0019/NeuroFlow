@@ -18,6 +18,11 @@ class Settings(BaseSettings):
 
     otel_exporter_endpoint: str = "http://localhost:4318/v1/traces"
 
+    # Optional LLM provider credentials.
+    # NeuroFlow can start without these credentials.
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
+
     model_config = SettingsConfigDict(
         env_file="../.env",
         extra="ignore",
