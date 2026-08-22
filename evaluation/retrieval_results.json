@@ -1,0 +1,527 @@
+{
+  "benchmark": "NeuroFlow Production Retrieval Evaluation",
+  "thresholds": {
+    "target_hit_rate": 0.75,
+    "target_mrr": 0.55
+  },
+  "baseline_dense": {
+    "hit_rate": 1.0,
+    "mrr": 0.95
+  },
+  "rrf_hybrid": {
+    "hit_rate": 1.0,
+    "mrr": 0.95
+  },
+  "rrf_with_reranking": {
+    "hit_rate": 1.0,
+    "mrr": 1.0
+  },
+  "reranking_improved_mrr": true,
+  "thresholds_met": true,
+  "detailed_results": {
+    "dense_only": {
+      "hit_rate": 1.0,
+      "mrr": 0.95,
+      "total_queries": 10,
+      "hits": 10,
+      "per_query": [
+        {
+          "query_id": "q-01",
+          "query": "How does multi-head self-attention calculate attention weights?",
+          "expected": [
+            "chunk-102"
+          ],
+          "retrieved": [
+            "chunk-102",
+            "chunk-101",
+            "chunk-103",
+            "chunk-502",
+            "chunk-401"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-02",
+          "query": "What was the global temperature rise in 2023 climate assessment?",
+          "expected": [
+            "chunk-201"
+          ],
+          "retrieved": [
+            "chunk-202",
+            "chunk-201",
+            "chunk-501",
+            "chunk-303",
+            "chunk-101"
+          ],
+          "hit": true,
+          "reciprocal_rank": 0.5
+        },
+        {
+          "query_id": "q-03",
+          "query": "Explain HNSW index distance operators in PostgreSQL pgvector",
+          "expected": [
+            "chunk-302"
+          ],
+          "retrieved": [
+            "chunk-302",
+            "chunk-301",
+            "chunk-303",
+            "chunk-201",
+            "chunk-502"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-04",
+          "query": "How does Raft maintain log replication and leader election safety?",
+          "expected": [
+            "chunk-401"
+          ],
+          "retrieved": [
+            "chunk-401",
+            "chunk-402",
+            "chunk-301",
+            "chunk-103",
+            "chunk-202"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-05",
+          "query": "Describe Shor's quantum period finding and integer factorization algorithm",
+          "expected": [
+            "chunk-501"
+          ],
+          "retrieved": [
+            "chunk-501",
+            "chunk-502",
+            "chunk-401",
+            "chunk-303",
+            "chunk-402"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-06",
+          "query": "What is the formula for scaled dot product attention in transformers?",
+          "expected": [
+            "chunk-102"
+          ],
+          "retrieved": [
+            "chunk-102",
+            "chunk-303",
+            "chunk-201",
+            "chunk-103",
+            "chunk-501"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-07",
+          "query": "Show me 2023 renewable energy adoption growth rates",
+          "expected": [
+            "chunk-202"
+          ],
+          "retrieved": [
+            "chunk-202",
+            "chunk-102",
+            "chunk-103",
+            "chunk-201",
+            "chunk-101"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-08",
+          "query": "How does full text search rank cover density with ts_rank_cd?",
+          "expected": [
+            "chunk-303"
+          ],
+          "retrieved": [
+            "chunk-303",
+            "chunk-502",
+            "chunk-501",
+            "chunk-301",
+            "chunk-202"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-09",
+          "query": "Compare Grover's quadratic speedup versus classical search",
+          "expected": [
+            "chunk-502"
+          ],
+          "retrieved": [
+            "chunk-502",
+            "chunk-401",
+            "chunk-301",
+            "chunk-303",
+            "chunk-402"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-10",
+          "query": "How do positional encodings provide sequence order to self-attention?",
+          "expected": [
+            "chunk-103"
+          ],
+          "retrieved": [
+            "chunk-103",
+            "chunk-102",
+            "chunk-101",
+            "chunk-401",
+            "chunk-402"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        }
+      ]
+    },
+    "rrf_only": {
+      "hit_rate": 1.0,
+      "mrr": 0.95,
+      "total_queries": 10,
+      "hits": 10,
+      "per_query": [
+        {
+          "query_id": "q-01",
+          "query": "How does multi-head self-attention calculate attention weights?",
+          "expected": [
+            "chunk-102"
+          ],
+          "retrieved": [
+            "chunk-102",
+            "chunk-101",
+            "chunk-103",
+            "chunk-502",
+            "chunk-401"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-02",
+          "query": "What was the global temperature rise in 2023 climate assessment?",
+          "expected": [
+            "chunk-201"
+          ],
+          "retrieved": [
+            "chunk-202",
+            "chunk-201",
+            "chunk-101",
+            "chunk-303",
+            "chunk-501"
+          ],
+          "hit": true,
+          "reciprocal_rank": 0.5
+        },
+        {
+          "query_id": "q-03",
+          "query": "Explain HNSW index distance operators in PostgreSQL pgvector",
+          "expected": [
+            "chunk-302"
+          ],
+          "retrieved": [
+            "chunk-302",
+            "chunk-301",
+            "chunk-303",
+            "chunk-201",
+            "chunk-502"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-04",
+          "query": "How does Raft maintain log replication and leader election safety?",
+          "expected": [
+            "chunk-401"
+          ],
+          "retrieved": [
+            "chunk-401",
+            "chunk-301",
+            "chunk-101",
+            "chunk-202",
+            "chunk-402"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-05",
+          "query": "Describe Shor's quantum period finding and integer factorization algorithm",
+          "expected": [
+            "chunk-501"
+          ],
+          "retrieved": [
+            "chunk-501",
+            "chunk-502",
+            "chunk-401",
+            "chunk-303",
+            "chunk-301"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-06",
+          "query": "What is the formula for scaled dot product attention in transformers?",
+          "expected": [
+            "chunk-102"
+          ],
+          "retrieved": [
+            "chunk-102",
+            "chunk-303",
+            "chunk-103",
+            "chunk-101",
+            "chunk-201"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-07",
+          "query": "Show me 2023 renewable energy adoption growth rates",
+          "expected": [
+            "chunk-202"
+          ],
+          "retrieved": [
+            "chunk-202",
+            "chunk-201",
+            "chunk-102",
+            "chunk-103",
+            "chunk-101"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-08",
+          "query": "How does full text search rank cover density with ts_rank_cd?",
+          "expected": [
+            "chunk-303"
+          ],
+          "retrieved": [
+            "chunk-303",
+            "chunk-202",
+            "chunk-301",
+            "chunk-502",
+            "chunk-302"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-09",
+          "query": "Compare Grover's quadratic speedup versus classical search",
+          "expected": [
+            "chunk-502"
+          ],
+          "retrieved": [
+            "chunk-502",
+            "chunk-301",
+            "chunk-303",
+            "chunk-501",
+            "chunk-401"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-10",
+          "query": "How do positional encodings provide sequence order to self-attention?",
+          "expected": [
+            "chunk-103"
+          ],
+          "retrieved": [
+            "chunk-103",
+            "chunk-102",
+            "chunk-101",
+            "chunk-301",
+            "chunk-501"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        }
+      ]
+    },
+    "full": {
+      "hit_rate": 1.0,
+      "mrr": 1.0,
+      "total_queries": 10,
+      "hits": 10,
+      "per_query": [
+        {
+          "query_id": "q-01",
+          "query": "How does multi-head self-attention calculate attention weights?",
+          "expected": [
+            "chunk-102"
+          ],
+          "retrieved": [
+            "chunk-102",
+            "chunk-101",
+            "chunk-103",
+            "chunk-502",
+            "chunk-401"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-02",
+          "query": "What was the global temperature rise in 2023 climate assessment?",
+          "expected": [
+            "chunk-201"
+          ],
+          "retrieved": [
+            "chunk-201",
+            "chunk-202",
+            "chunk-302",
+            "chunk-101",
+            "chunk-303"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-03",
+          "query": "Explain HNSW index distance operators in PostgreSQL pgvector",
+          "expected": [
+            "chunk-302"
+          ],
+          "retrieved": [
+            "chunk-302",
+            "chunk-301",
+            "chunk-303",
+            "chunk-201",
+            "chunk-502"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-04",
+          "query": "How does Raft maintain log replication and leader election safety?",
+          "expected": [
+            "chunk-401"
+          ],
+          "retrieved": [
+            "chunk-401",
+            "chunk-301",
+            "chunk-101",
+            "chunk-202",
+            "chunk-402"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-05",
+          "query": "Describe Shor's quantum period finding and integer factorization algorithm",
+          "expected": [
+            "chunk-501"
+          ],
+          "retrieved": [
+            "chunk-501",
+            "chunk-502",
+            "chunk-401",
+            "chunk-303",
+            "chunk-301"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-06",
+          "query": "What is the formula for scaled dot product attention in transformers?",
+          "expected": [
+            "chunk-102"
+          ],
+          "retrieved": [
+            "chunk-102",
+            "chunk-303",
+            "chunk-103",
+            "chunk-101",
+            "chunk-302"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-07",
+          "query": "Show me 2023 renewable energy adoption growth rates",
+          "expected": [
+            "chunk-202"
+          ],
+          "retrieved": [
+            "chunk-202",
+            "chunk-201",
+            "chunk-102",
+            "chunk-103",
+            "chunk-101"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-08",
+          "query": "How does full text search rank cover density with ts_rank_cd?",
+          "expected": [
+            "chunk-303"
+          ],
+          "retrieved": [
+            "chunk-303",
+            "chunk-202",
+            "chunk-301",
+            "chunk-502",
+            "chunk-302"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-09",
+          "query": "Compare Grover's quadratic speedup versus classical search",
+          "expected": [
+            "chunk-502"
+          ],
+          "retrieved": [
+            "chunk-502",
+            "chunk-301",
+            "chunk-303",
+            "chunk-501",
+            "chunk-401"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        },
+        {
+          "query_id": "q-10",
+          "query": "How do positional encodings provide sequence order to self-attention?",
+          "expected": [
+            "chunk-103"
+          ],
+          "retrieved": [
+            "chunk-103",
+            "chunk-101",
+            "chunk-102",
+            "chunk-301",
+            "chunk-501"
+          ],
+          "hit": true,
+          "reciprocal_rank": 1.0
+        }
+      ]
+    }
+  }
+}

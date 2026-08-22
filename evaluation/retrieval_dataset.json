@@ -1,0 +1,161 @@
+{
+  "documents": [
+    {
+      "id": "doc-001",
+      "filename": "transformer_architecture_overview.pdf",
+      "metadata": {"year": 2023, "topic": "deep_learning", "author": "Vaswani et al."},
+      "chunks": [
+        {
+          "id": "chunk-101",
+          "content": "The Transformer architecture relies entirely on self-attention mechanisms to compute representations of its input and output without using sequence-aligned RNNs or convolution.",
+          "metadata": {"year": 2023, "topic": "deep_learning", "page_number": 1}
+        },
+        {
+          "id": "chunk-102",
+          "content": "Multi-Head Attention allows the model to jointly attend to information from different representation subspaces at different positions. Scaled dot-product attention computes softmax(QK^T / sqrt(d_k))V.",
+          "metadata": {"year": 2023, "topic": "deep_learning", "page_number": 3}
+        },
+        {
+          "id": "chunk-103",
+          "content": "Positional encodings of sinusoidal frequencies are added to input embeddings to inject positional order information into the non-recurrent attention layers.",
+          "metadata": {"year": 2023, "topic": "deep_learning", "page_number": 5}
+        }
+      ]
+    },
+    {
+      "id": "doc-002",
+      "filename": "climate_change_assessment_2023.pdf",
+      "metadata": {"year": 2023, "topic": "climate", "author": "IPCC"},
+      "chunks": [
+        {
+          "id": "chunk-201",
+          "content": "Global mean surface temperature in 2023 reached approximately 1.45 degrees Celsius above pre-industrial baselines, driven predominantly by anthropogenic greenhouse gas emissions.",
+          "metadata": {"year": 2023, "topic": "climate", "page_number": 2}
+        },
+        {
+          "id": "chunk-202",
+          "content": "Renewable energy adoption grew by 24 percent in 2023, with solar photovoltaic and wind energy capacity additions exceeding historical projections worldwide.",
+          "metadata": {"year": 2023, "topic": "climate", "page_number": 7}
+        }
+      ]
+    },
+    {
+      "id": "doc-003",
+      "filename": "postgresql_pgvector_internals.pdf",
+      "metadata": {"year": 2024, "topic": "databases", "author": "Postgres Core"},
+      "chunks": [
+        {
+          "id": "chunk-301",
+          "content": "pgvector adds vector similarity search capabilities to PostgreSQL supporting exact kNN and approximate nearest neighbor indexing via HNSW and IVFFlat indexes.",
+          "metadata": {"year": 2024, "topic": "databases", "page_number": 1}
+        },
+        {
+          "id": "chunk-302",
+          "content": "The HNSW index in pgvector uses hierarchical navigable small world graphs with vector_cosine_ops, vector_l2_ops, and vector_ip_ops distance operators.",
+          "metadata": {"year": 2024, "topic": "databases", "page_number": 4}
+        },
+        {
+          "id": "chunk-303",
+          "content": "Full-text search in PostgreSQL uses tsvector and tsquery data types along with ts_rank and ts_rank_cd for cover density relevance scoring.",
+          "metadata": {"year": 2024, "topic": "databases", "page_number": 9}
+        }
+      ]
+    },
+    {
+      "id": "doc-004",
+      "filename": "distributed_systems_consensus.pdf",
+      "metadata": {"year": 2022, "topic": "distributed_systems", "author": "Lamport"},
+      "chunks": [
+        {
+          "id": "chunk-401",
+          "content": "The Raft consensus algorithm decomposes state machine replication into leader election, log replication, and safety guarantees for distributed fault tolerance.",
+          "metadata": {"year": 2022, "topic": "distributed_systems", "page_number": 2}
+        },
+        {
+          "id": "chunk-402",
+          "content": "Paxos ensures consensus across asynchronous networks with unreliable communication through prepare, promise, accept, and commit phases.",
+          "metadata": {"year": 2022, "topic": "distributed_systems", "page_number": 6}
+        }
+      ]
+    },
+    {
+      "id": "doc-005",
+      "filename": "quantum_computing_algorithms.pdf",
+      "metadata": {"year": 2023, "topic": "quantum", "author": "Shor"},
+      "chunks": [
+        {
+          "id": "chunk-501",
+          "content": "Shor's algorithm provides polynomial time integer factorization using quantum Fourier transforms to find periods in modular exponentiation functions.",
+          "metadata": {"year": 2023, "topic": "quantum", "page_number": 1}
+        },
+        {
+          "id": "chunk-502",
+          "content": "Grover's search algorithm provides quadratic speedup for unstructured database search queries, evaluating N items in O(sqrt(N)) oracle queries.",
+          "metadata": {"year": 2023, "topic": "quantum", "page_number": 4}
+        }
+      ]
+    }
+  ],
+  "queries": [
+    {
+      "id": "q-01",
+      "query": "How does multi-head self-attention calculate attention weights?",
+      "expected_chunk_ids": ["chunk-102"],
+      "query_type": "procedural"
+    },
+    {
+      "id": "q-02",
+      "query": "What was the global temperature rise in 2023 climate assessment?",
+      "expected_chunk_ids": ["chunk-201"],
+      "query_type": "factual"
+    },
+    {
+      "id": "q-03",
+      "query": "Explain HNSW index distance operators in PostgreSQL pgvector",
+      "expected_chunk_ids": ["chunk-302"],
+      "query_type": "analytical"
+    },
+    {
+      "id": "q-04",
+      "query": "How does Raft maintain log replication and leader election safety?",
+      "expected_chunk_ids": ["chunk-401"],
+      "query_type": "procedural"
+    },
+    {
+      "id": "q-05",
+      "query": "Describe Shor's quantum period finding and integer factorization algorithm",
+      "expected_chunk_ids": ["chunk-501"],
+      "query_type": "analytical"
+    },
+    {
+      "id": "q-06",
+      "query": "What is the formula for scaled dot product attention in transformers?",
+      "expected_chunk_ids": ["chunk-102"],
+      "query_type": "factual"
+    },
+    {
+      "id": "q-07",
+      "query": "Show me 2023 renewable energy adoption growth rates",
+      "expected_chunk_ids": ["chunk-202"],
+      "query_type": "factual"
+    },
+    {
+      "id": "q-08",
+      "query": "How does full text search rank cover density with ts_rank_cd?",
+      "expected_chunk_ids": ["chunk-303"],
+      "query_type": "procedural"
+    },
+    {
+      "id": "q-09",
+      "query": "Compare Grover's quadratic speedup versus classical search",
+      "expected_chunk_ids": ["chunk-502"],
+      "query_type": "comparative"
+    },
+    {
+      "id": "q-10",
+      "query": "How do positional encodings provide sequence order to self-attention?",
+      "expected_chunk_ids": ["chunk-103"],
+      "query_type": "analytical"
+    }
+  ]
+}
