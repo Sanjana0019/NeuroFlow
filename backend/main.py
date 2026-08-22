@@ -16,6 +16,7 @@ from providers.anthropic_provider import AnthropicProvider
 
 from api.ingest import router as ingest_router
 from api.query import router as query_router
+from api.runs import router as runs_router
 from config import settings
 from db.health import check_mlflow, check_postgres, check_redis
 from db.migrations import check_schema
@@ -148,6 +149,7 @@ app = FastAPI(
 
 app.include_router(ingest_router)
 app.include_router(query_router)
+app.include_router(runs_router)
 
 # Automatically create traces for incoming HTTP requests.
 app.add_middleware(OpenTelemetryMiddleware)

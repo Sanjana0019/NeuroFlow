@@ -197,6 +197,50 @@ async def startup(ctx: dict[str, Any]) -> None:
     set_client(client)
 
 
+async def evaluate_pipeline_run(ctx: dict[str, Any], run_id: str) -> None:
+    """ARQ background job to run EvaluationJudge on a completed pipeline run."""
+    db_pool = ctx.get("db_pool")
+    client = ctx.get("neuroflow_client")
+    if not db_pool:
+        return
+
+    from uuid import UUID
+    from evaluation.judge import EvaluationJudge
+
+    run_uuid = UUID(str(run_id))
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, query, generation, retrieved_chunk_ids
+            FROM pipeline_runs
+            WHERE id = $1
+            """,
+            run_uuid,
+        )
+        if not row:
+            return
+
+        query_text = row["query"]
+        generation_text = row["generation"] or ""
+        chunk_ids = row["retrieved_chunk_ids"] or []
+
+        chunks = []
+        if chunk_ids:
+            chunk_rows = await conn.fetch(
+                "SELECT content FROM chunks WHERE id = ANY($1::uuid[])",
+                chunk_ids,
+            )
+            chunks = [r["content"] for r in chunk_rows]
+
+    judge = EvaluationJudge(client=client, db_pool=db_pool)
+    await judge.evaluate_run(
+        run_id=run_uuid,
+        query=query_text,
+        answer=generation_text,
+        context=chunks,
+    )
+
+
 async def shutdown(ctx: dict[str, Any]) -> None:
     """Close active resources on worker shutdown."""
     if "redis" in ctx:
@@ -208,7 +252,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """ARQ Worker configuration settings."""
 
-    functions = [process_ingestion_job]
+    functions = [process_ingestion_job, evaluate_pipeline_run]
     redis_settings = RedisSettings(
         host=settings.redis_host,
         port=settings.redis_port,

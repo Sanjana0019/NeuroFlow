@@ -1,0 +1,212 @@
+[
+  {
+    "id": 1,
+    "query": "What is the capital of France?",
+    "answer": "Paris is the capital of France.",
+    "context": "Paris is the capital and largest city of France.",
+    "human_score": 1.0
+  },
+  {
+    "id": 2,
+    "query": "Who developed the theory of relativity?",
+    "answer": "Albert Einstein developed the theory of general relativity in 1915.",
+    "context": "Albert Einstein published the general theory of relativity in 1915 after developing special relativity in 1905.",
+    "human_score": 1.0
+  },
+  {
+    "id": 3,
+    "query": "When did Apollo 11 land on the Moon?",
+    "answer": "Apollo 11 landed on the Moon on July 20, 1969.",
+    "context": "The Apollo 11 lunar module landed on the Moon on July 20, 1969, carrying Neil Armstrong and Buzz Aldrin.",
+    "human_score": 1.0
+  },
+  {
+    "id": 4,
+    "query": "What is the boiling point of water at sea level?",
+    "answer": "Water boils at 100 degrees Celsius (212 degrees Fahrenheit) at standard atmospheric pressure.",
+    "context": "At sea level with standard atmospheric pressure, the boiling point of pure water is 100 °C (212 °F).",
+    "human_score": 1.0
+  },
+  {
+    "id": 5,
+    "query": "What is photosynthesis?",
+    "answer": "Photosynthesis is the process by which green plants convert light energy into chemical energy.",
+    "context": "Photosynthesis is a biological process used by plants and other organisms to convert light energy into chemical energy stored in carbohydrates.",
+    "human_score": 1.0
+  },
+  {
+    "id": 6,
+    "query": "What is the speed of light?",
+    "answer": "The speed of light in vacuum is approximately 299,792 kilometers per second.",
+    "context": "In vacuum, the exact speed of light is 299,792,458 meters per second.",
+    "human_score": 1.0
+  },
+  {
+    "id": 7,
+    "query": "Who invented the World Wide Web?",
+    "answer": "Tim Berners-Lee invented the World Wide Web in 1989 at CERN.",
+    "context": "English scientist Tim Berners-Lee invented the World Wide Web in 1989 while working at CERN.",
+    "human_score": 1.0
+  },
+  {
+    "id": 8,
+    "query": "What does DNA stand for?",
+    "answer": "DNA stands for deoxyribonucleic acid.",
+    "context": "Deoxyribonucleic acid, commonly known as DNA, is the hereditary molecule in almost all living organisms.",
+    "human_score": 1.0
+  },
+  {
+    "id": 9,
+    "query": "What is the largest planet in our solar system?",
+    "answer": "Jupiter is the largest planet in the Solar System.",
+    "context": "Jupiter is the fifth planet from the Sun and the largest in the Solar System by mass and volume.",
+    "human_score": 1.0
+  },
+  {
+    "id": 10,
+    "query": "Who wrote Romeo and Juliet?",
+    "answer": "William Shakespeare wrote the tragedy Romeo and Juliet early in his career.",
+    "context": "Romeo and Juliet is a tragedy written by William Shakespeare early in his career about two young Italian star-crossed lovers.",
+    "human_score": 1.0
+  },
+  {
+    "id": 11,
+    "query": "What causes earthquakes?",
+    "answer": "Earthquakes are caused by sudden release of energy along geological faults in the Earth's crust.",
+    "context": "An earthquake is the shaking of the surface of the Earth resulting from a sudden release of energy in the lithosphere creating seismic waves.",
+    "human_score": 1.0
+  },
+  {
+    "id": 12,
+    "query": "What is the chemical symbol for gold?",
+    "answer": "The chemical symbol for gold is Au, derived from the Latin word aurum.",
+    "context": "Gold is a chemical element with the symbol Au (from Latin: aurum) and atomic number 79.",
+    "human_score": 1.0
+  },
+  {
+    "id": 13,
+    "query": "What is the currency of Japan?",
+    "answer": "The official currency of Japan is the Japanese yen.",
+    "context": "The yen is the official currency of Japan and the third most traded currency in the foreign exchange market.",
+    "human_score": 1.0
+  },
+  {
+    "id": 14,
+    "query": "What is the hardest natural mineral on Earth?",
+    "answer": "Diamond is the hardest known natural mineral on the Mohs hardness scale.",
+    "context": "On the Mohs scale of mineral hardness, diamond is the hardest natural mineral with a rating of 10.",
+    "human_score": 1.0
+  },
+  {
+    "id": 15,
+    "query": "What is the main function of red blood cells?",
+    "answer": "Red blood cells transport oxygen from the lungs to body tissues.",
+    "context": "Red blood cells, or erythrocytes, contain hemoglobin and function primarily to transport oxygen from the respiratory organs to peripheral tissues.",
+    "human_score": 1.0
+  },
+  {
+    "id": 16,
+    "query": "Where was tea first cultivated?",
+    "answer": "Tea was first cultivated in China during the Shang dynasty and later popular in Britain.",
+    "context": "Tea originated in ancient China, where it was consumed as a medicinal beverage before spreading across Asia.",
+    "human_score": 0.5
+  },
+  {
+    "id": 17,
+    "query": "How many continents are there?",
+    "answer": "There are 7 continents on Earth, and all 7 are permanently populated by humans.",
+    "context": "By convention, there are seven continents on Earth: Asia, Africa, North America, South America, Antarctica, Europe, and Australia.",
+    "human_score": 0.5
+  },
+  {
+    "id": 18,
+    "query": "What is the primary language of Brazil?",
+    "answer": "Portuguese is the primary official language of Brazil, while Spanish is also an official language.",
+    "context": "Portuguese is the official and almost universal language of Brazil, spoken by nearly 100 percent of the population.",
+    "human_score": 0.5
+  },
+  {
+    "id": 19,
+    "query": "When was Harvard University founded?",
+    "answer": "Harvard University was founded in 1636 in Cambridge by Benjamin Franklin.",
+    "context": "Harvard University is a private Ivy League research university in Cambridge, Massachusetts, established in 1636.",
+    "human_score": 0.5
+  },
+  {
+    "id": 20,
+    "query": "What is the tallest mountain in the world?",
+    "answer": "Mount Everest is the highest mountain above sea level, located in the Andes range.",
+    "context": "Mount Everest is Earth's highest mountain above sea level, located in the Mahalangur Himal sub-range of the Himalayas.",
+    "human_score": 0.5
+  },
+  {
+    "id": 21,
+    "query": "What is the lifespan of a domestic cat?",
+    "answer": "Domestic cats live around 12 to 15 years, with some living up to 50 years.",
+    "context": "The average lifespan for indoor domestic cats ranges between 12 and 15 years.",
+    "human_score": 0.5
+  },
+  {
+    "id": 22,
+    "query": "What is Python in programming?",
+    "answer": "Python is a high-level programming language created in 1991 by Dennis Ritchie.",
+    "context": "Python is an interpreted high-level programming language created by Guido van Rossum and first released in 1991.",
+    "human_score": 0.5
+  },
+  {
+    "id": 23,
+    "query": "What is the function of the human heart?",
+    "answer": "The human heart pumps oxygenated blood to the body and produces insulin.",
+    "context": "The heart is a muscular organ that pumps blood through the blood vessels of the circulatory system.",
+    "human_score": 0.5
+  },
+  {
+    "id": 24,
+    "query": "What is the capital of Australia?",
+    "answer": "The capital of Australia is Sydney.",
+    "context": "Canberra is the federal capital city of Australia, selected as a compromise between Sydney and Melbourne.",
+    "human_score": 0.0
+  },
+  {
+    "id": 25,
+    "query": "What is the boiling point of ethanol?",
+    "answer": "Ethanol boils at 350 degrees Celsius.",
+    "context": "Pure ethanol has a boiling point of 78.37 °C (173.07 °F) at standard pressure.",
+    "human_score": 0.0
+  },
+  {
+    "id": 26,
+    "query": "Who was the first President of the United States?",
+    "answer": "Thomas Jefferson was the first President of the United States.",
+    "context": "George Washington was an American military officer and statesman who served as the first president of the United States from 1789 to 1797.",
+    "human_score": 0.0
+  },
+  {
+    "id": 27,
+    "query": "What is the primary gas in Earth's atmosphere?",
+    "answer": "Oxygen makes up 90 percent of the Earth's atmosphere.",
+    "context": "Nitrogen is the most abundant gas in Earth's atmosphere, accounting for roughly 78 percent, with oxygen making up about 21 percent.",
+    "human_score": 0.0
+  },
+  {
+    "id": 28,
+    "query": "What is the speed of sound in air?",
+    "answer": "Sound travels at 3,000 meters per second in air at room temperature.",
+    "context": "The speed of sound in dry air at 20 °C is approximately 343 meters per second (1,125 ft/s).",
+    "human_score": 0.0
+  },
+  {
+    "id": 29,
+    "query": "Who discovered penicillin?",
+    "answer": "Louis Pasteur discovered penicillin in 1950.",
+    "context": "Scottish physician Alexander Fleming discovered penicillin in 1928 at St Mary's Hospital in London.",
+    "human_score": 0.0
+  },
+  {
+    "id": 30,
+    "query": "What is the capital of Canada?",
+    "answer": "Toronto is the federal capital of Canada.",
+    "context": "Ottawa is the capital city of Canada, located in the southern portion of the province of Ontario.",
+    "human_score": 0.0
+  }
+]

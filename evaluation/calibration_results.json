@@ -1,0 +1,250 @@
+{
+  "benchmark": "NeuroFlow RAGAS Faithfulness Calibration",
+  "sample_size": 30,
+  "target_pearson_correlation": 0.85,
+  "measured_pearson_correlation": 0.9123,
+  "threshold_met": true,
+  "mean_absolute_error": 0.1,
+  "evaluated_examples": [
+    {
+      "id": 1,
+      "query": "What is the capital of France?",
+      "answer": "Paris is the capital of France.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 2,
+      "query": "Who developed the theory of relativity?",
+      "answer": "Albert Einstein developed the theory of general relativity in 1915.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 3,
+      "query": "When did Apollo 11 land on the Moon?",
+      "answer": "Apollo 11 landed on the Moon on July 20, 1969.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 4,
+      "query": "What is the boiling point of water at sea level?",
+      "answer": "Water boils at 100 degrees Celsius (212 degrees Fahrenheit) at standard atmospheric pressure.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 5,
+      "query": "What is photosynthesis?",
+      "answer": "Photosynthesis is the process by which green plants convert light energy into chemical energy.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 6,
+      "query": "What is the speed of light?",
+      "answer": "The speed of light in vacuum is approximately 299,792 kilometers per second.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 7,
+      "query": "Who invented the World Wide Web?",
+      "answer": "Tim Berners-Lee invented the World Wide Web in 1989 at CERN.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 8,
+      "query": "What does DNA stand for?",
+      "answer": "DNA stands for deoxyribonucleic acid.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 9,
+      "query": "What is the largest planet in our solar system?",
+      "answer": "Jupiter is the largest planet in the Solar System.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 10,
+      "query": "Who wrote Romeo and Juliet?",
+      "answer": "William Shakespeare wrote the tragedy Romeo and Juliet early in his career.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 11,
+      "query": "What causes earthquakes?",
+      "answer": "Earthquakes are caused by sudden release of energy along geological faults in the Earth's crust.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 12,
+      "query": "What is the chemical symbol for gold?",
+      "answer": "The chemical symbol for gold is Au, derived from the Latin word aurum.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 13,
+      "query": "What is the currency of Japan?",
+      "answer": "The official currency of Japan is the Japanese yen.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 14,
+      "query": "What is the hardest natural mineral on Earth?",
+      "answer": "Diamond is the hardest known natural mineral on the Mohs hardness scale.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 15,
+      "query": "What is the main function of red blood cells?",
+      "answer": "Red blood cells transport oxygen from the lungs to body tissues.",
+      "human_score": 1.0,
+      "automated_faithfulness": 1.0,
+      "error": 0.0
+    },
+    {
+      "id": 16,
+      "query": "Where was tea first cultivated?",
+      "answer": "Tea was first cultivated in China during the Shang dynasty and later popular in Britain.",
+      "human_score": 0.5,
+      "automated_faithfulness": 0.0,
+      "error": 0.5
+    },
+    {
+      "id": 17,
+      "query": "How many continents are there?",
+      "answer": "There are 7 continents on Earth, and all 7 are permanently populated by humans.",
+      "human_score": 0.5,
+      "automated_faithfulness": 0.0,
+      "error": 0.5
+    },
+    {
+      "id": 18,
+      "query": "What is the primary language of Brazil?",
+      "answer": "Portuguese is the primary official language of Brazil, while Spanish is also an official language.",
+      "human_score": 0.5,
+      "automated_faithfulness": 0.5,
+      "error": 0.0
+    },
+    {
+      "id": 19,
+      "query": "When was Harvard University founded?",
+      "answer": "Harvard University was founded in 1636 in Cambridge by Benjamin Franklin.",
+      "human_score": 0.5,
+      "automated_faithfulness": 0.0,
+      "error": 0.5
+    },
+    {
+      "id": 20,
+      "query": "What is the tallest mountain in the world?",
+      "answer": "Mount Everest is the highest mountain above sea level, located in the Andes range.",
+      "human_score": 0.5,
+      "automated_faithfulness": 0.0,
+      "error": 0.5
+    },
+    {
+      "id": 21,
+      "query": "What is the lifespan of a domestic cat?",
+      "answer": "Domestic cats live around 12 to 15 years, with some living up to 50 years.",
+      "human_score": 0.5,
+      "automated_faithfulness": 0.5,
+      "error": 0.0
+    },
+    {
+      "id": 22,
+      "query": "What is Python in programming?",
+      "answer": "Python is a high-level programming language created in 1991 by Dennis Ritchie.",
+      "human_score": 0.5,
+      "automated_faithfulness": 0.0,
+      "error": 0.5
+    },
+    {
+      "id": 23,
+      "query": "What is the function of the human heart?",
+      "answer": "The human heart pumps oxygenated blood to the body and produces insulin.",
+      "human_score": 0.5,
+      "automated_faithfulness": 0.0,
+      "error": 0.5
+    },
+    {
+      "id": 24,
+      "query": "What is the capital of Australia?",
+      "answer": "The capital of Australia is Sydney.",
+      "human_score": 0.0,
+      "automated_faithfulness": 0.0,
+      "error": 0.0
+    },
+    {
+      "id": 25,
+      "query": "What is the boiling point of ethanol?",
+      "answer": "Ethanol boils at 350 degrees Celsius.",
+      "human_score": 0.0,
+      "automated_faithfulness": 0.0,
+      "error": 0.0
+    },
+    {
+      "id": 26,
+      "query": "Who was the first President of the United States?",
+      "answer": "Thomas Jefferson was the first President of the United States.",
+      "human_score": 0.0,
+      "automated_faithfulness": 0.0,
+      "error": 0.0
+    },
+    {
+      "id": 27,
+      "query": "What is the primary gas in Earth's atmosphere?",
+      "answer": "Oxygen makes up 90 percent of the Earth's atmosphere.",
+      "human_score": 0.0,
+      "automated_faithfulness": 0.0,
+      "error": 0.0
+    },
+    {
+      "id": 28,
+      "query": "What is the speed of sound in air?",
+      "answer": "Sound travels at 3,000 meters per second in air at room temperature.",
+      "human_score": 0.0,
+      "automated_faithfulness": 0.0,
+      "error": 0.0
+    },
+    {
+      "id": 29,
+      "query": "Who discovered penicillin?",
+      "answer": "Louis Pasteur discovered penicillin in 1950.",
+      "human_score": 0.0,
+      "automated_faithfulness": 0.0,
+      "error": 0.0
+    },
+    {
+      "id": 30,
+      "query": "What is the capital of Canada?",
+      "answer": "Toronto is the federal capital of Canada.",
+      "human_score": 0.0,
+      "automated_faithfulness": 0.0,
+      "error": 0.0
+    }
+  ]
+}
