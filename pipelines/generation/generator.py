@@ -1,0 +1,362 @@
+import asyncio
+from dataclasses import dataclass
+import json
+import logging
+import time
+from typing import Any, AsyncGenerator
+from uuid import UUID, uuid4
+
+import tiktoken
+
+from backend.providers.base import ChatMessage
+from backend.providers.router import RoutingCriteria
+from pipelines.generation.citations import Citation, CitationParser
+from pipelines.generation.prompt_builder import PromptBuilder
+from pipelines.retrieval.models import AssembledContext, RetrievalResult
+
+logger = logging.getLogger("neuroflow.generation.generator")
+
+
+@dataclass
+class GenerationOutput:
+    """Complete result of a grounded generation request."""
+
+    run_id: UUID
+    query: str
+    generation: str
+    citations: list[Citation]
+    sources: list[dict[str, Any]]
+    input_tokens: int
+    output_tokens: int
+    latency_ms: int
+    model_used: str
+    status: str = "complete"
+
+
+class Generator:
+    """Orchestrates prompt assembly, LLM streaming, citation resolution, and pipeline run logging."""
+
+    def __init__(
+        self,
+        client=None,
+        prompt_builder: PromptBuilder | None = None,
+        token_encoding: str = "cl100k_base",
+    ):
+        self.client = client
+        self.prompt_builder = prompt_builder or PromptBuilder()
+        try:
+            self.tokenizer = tiktoken.get_encoding(token_encoding)
+        except Exception:
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
+
+    def count_tokens(self, text: str) -> int:
+        """Count tokens using tiktoken."""
+        if not text:
+            return 0
+        return len(self.tokenizer.encode(text))
+
+    async def _ensure_pipeline_id(self, conn, pipeline_id: UUID | str | None) -> UUID:
+        """Ensure a valid pipeline_id exists in the pipelines table."""
+        if pipeline_id:
+            try:
+                p_uuid = UUID(str(pipeline_id))
+                row = await conn.fetchrow("SELECT id FROM pipelines WHERE id = $1", p_uuid)
+                if row:
+                    return p_uuid
+            except Exception:
+                pass
+
+        # Fetch or seed default pipeline
+        row = await conn.fetchrow("SELECT id FROM pipelines LIMIT 1")
+        if row:
+            return row["id"]
+
+        new_id = await conn.fetchval(
+            """
+            INSERT INTO pipelines (name, config)
+            VALUES ('default_rag_pipeline', '{"type": "rag", "version": "1.0"}')
+            ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+            RETURNING id
+            """
+        )
+        return new_id
+
+    async def _create_pipeline_run(
+        self,
+        conn,
+        pipeline_id: UUID,
+        query: str,
+        retrieved_chunk_ids: list[UUID],
+    ) -> UUID:
+        """Create an initial pipeline_runs record with status='running'."""
+        run_id = await conn.fetchval(
+            """
+            INSERT INTO pipeline_runs (
+                pipeline_id,
+                query,
+                retrieved_chunk_ids,
+                status
+            )
+            VALUES ($1, $2, $3, 'running')
+            RETURNING id
+            """,
+            pipeline_id,
+            query,
+            retrieved_chunk_ids,
+        )
+        return run_id
+
+    async def _update_pipeline_run(
+        self,
+        conn,
+        run_id: UUID,
+        generation: str,
+        input_tokens: int,
+        output_tokens: int,
+        latency_ms: int,
+        model_used: str,
+        status: str = "complete",
+    ) -> None:
+        """Update the pipeline_runs record upon completion."""
+        await conn.execute(
+            """
+            UPDATE pipeline_runs
+            SET generation = $1,
+                input_tokens = $2,
+                output_tokens = $3,
+                latency_ms = $4,
+                model_used = $5,
+                status = $6
+            WHERE id = $7
+            """,
+            generation,
+            input_tokens,
+            output_tokens,
+            latency_ms,
+            model_used,
+            status,
+            run_id,
+        )
+
+    def _enqueue_evaluation_job(self, arq_redis, run_id: UUID | str) -> None:
+        """Enqueue the Task 37 evaluation job asynchronously in the background without awaiting."""
+        if arq_redis is None:
+            return
+
+        async def _dispatch():
+            try:
+                await arq_redis.enqueue_job("evaluate_pipeline_run", run_id=str(run_id))
+            except Exception as exc:
+                logger.warning("Failed to enqueue evaluation job for run %s: %s", run_id, exc)
+
+        asyncio.create_task(_dispatch())
+
+    async def stream_generation(
+        self,
+        query: str,
+        assembled_context: AssembledContext | str,
+        chunks_used: list[RetrievalResult] | None = None,
+        query_type: str = "factual",
+        pipeline_id: UUID | str | None = None,
+        db_pool=None,
+        arq_redis=None,
+        model_override: str | None = None,
+    ) -> AsyncGenerator[dict[str, Any], None]:
+        """Stream generation tokens and yield events while persisting run and citations."""
+        # 1. Prepare Context and Chunks
+        if isinstance(assembled_context, AssembledContext):
+            context_text = assembled_context.context
+            active_chunks = assembled_context.chunks_used
+            active_sources = assembled_context.sources
+        else:
+            context_text = str(assembled_context)
+            active_chunks = chunks_used or []
+            active_sources = [
+                {
+                    "source_index": idx,
+                    "document_id": str(c.document_id),
+                    "filename": c.filename,
+                    "page_number": c.page_number,
+                }
+                for idx, c in enumerate(active_chunks, start=1)
+            ]
+
+        # 2. Build Chat Messages
+        messages = self.prompt_builder.build(
+            query=query,
+            context=context_text,
+            query_type=query_type,
+        )
+
+        input_tokens = sum(self.count_tokens(m.content) for m in messages if isinstance(m.content, str))
+        chunk_uuids = [
+            UUID(str(c.chunk_id)) for c in active_chunks if c.chunk_id is not None
+        ]
+
+        # 3. Create pipeline_runs record before calling LLM
+        run_id = uuid4()
+        if db_pool is not None:
+            try:
+                async with db_pool.acquire() as conn:
+                    valid_pipeline_id = await self._ensure_pipeline_id(conn, pipeline_id)
+                    run_id = await self._create_pipeline_run(
+                        conn=conn,
+                        pipeline_id=valid_pipeline_id,
+                        query=query,
+                        retrieved_chunk_ids=chunk_uuids,
+                    )
+            except Exception as exc:
+                logger.warning("Could not persist initial pipeline_run: %s", exc)
+
+        start_time = time.perf_counter()
+        accumulated_text_chunks: list[str] = []
+        model_used = model_override or "gpt-4o-mini"
+
+        # 4. Stream tokens from LLM provider
+        try:
+            if self.client:
+                # Resolve provider stream
+                if hasattr(self.client, "stream"):
+                    criteria = RoutingCriteria(task_type="generation")
+                    stream_iter, resolved_model = await self.client.stream(messages, criteria)
+                    model_used = resolved_model
+                elif hasattr(self.client, "providers") and "openai" in self.client.providers:
+                    stream_iter = self.client.providers["openai"].stream(messages)
+                    model_used = getattr(self.client.providers["openai"], "model", "gpt-4o-mini")
+                else:
+                    # Fallback chat completion
+                    res = await self.client.chat(messages, RoutingCriteria(task_type="generation"))
+                    model_used = res.model
+
+                    async def _single_yield():
+                        yield res.content
+
+                    stream_iter = _single_yield()
+
+                async for token in stream_iter:
+                    if token:
+                        accumulated_text_chunks.append(token)
+                        yield {"type": "token", "delta": token}
+            else:
+                # Mock / Fallback stream for testing
+                mock_response = f"Based on [Source 1], the answer to '{query}' is well documented."
+                for word in mock_response.split(" "):
+                    delta = word + " "
+                    accumulated_text_chunks.append(delta)
+                    yield {"type": "token", "delta": delta}
+
+        except Exception as exc:
+            logger.error("Error during generation stream: %s", exc)
+            if db_pool is not None:
+                try:
+                    async with db_pool.acquire() as conn:
+                        await conn.execute(
+                            "UPDATE pipeline_runs SET status = 'failed' WHERE id = $1",
+                            run_id,
+                        )
+                except Exception:
+                    pass
+            yield {"type": "error", "message": str(exc)}
+            return
+
+        # 5. Process completion metrics & citations
+        full_text = "".join(accumulated_text_chunks).strip()
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
+        output_tokens = self.count_tokens(full_text)
+        citations = CitationParser.parse(full_text, active_chunks)
+
+        # 6. Update pipeline_runs record with status='complete'
+        if db_pool is not None:
+            try:
+                async with db_pool.acquire() as conn:
+                    await self._update_pipeline_run(
+                        conn=conn,
+                        run_id=run_id,
+                        generation=full_text,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        latency_ms=latency_ms,
+                        model_used=model_used,
+                        status="complete",
+                    )
+            except Exception as exc:
+                logger.warning("Could not update pipeline_run on completion: %s", exc)
+
+        # 7. Asynchronously enqueue evaluation job without awaiting
+        self._enqueue_evaluation_job(arq_redis, run_id)
+
+        # 8. Emit final done event
+        yield {
+            "type": "done",
+            "run_id": str(run_id),
+            "generation": full_text,
+            "citations": [
+                {
+                    "reference": c.reference,
+                    "chunk_id": str(c.chunk_id) if c.chunk_id else None,
+                    "document_name": c.document_name,
+                    "page_number": c.page_number,
+                    "content_preview": c.content_preview,
+                    "invalid_citation": c.invalid_citation,
+                }
+                for c in citations
+            ],
+            "sources": active_sources,
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "latency_ms": latency_ms,
+            "model_used": model_used,
+        }
+
+    async def generate(
+        self,
+        query: str,
+        assembled_context: AssembledContext | str,
+        chunks_used: list[RetrievalResult] | None = None,
+        query_type: str = "factual",
+        pipeline_id: UUID | str | None = None,
+        db_pool=None,
+        arq_redis=None,
+    ) -> GenerationOutput:
+        """Non-streaming generation returning the aggregated GenerationOutput."""
+        accumulated_text = ""
+        final_event = {}
+
+        async for event in self.stream_generation(
+            query=query,
+            assembled_context=assembled_context,
+            chunks_used=chunks_used,
+            query_type=query_type,
+            pipeline_id=pipeline_id,
+            db_pool=db_pool,
+            arq_redis=arq_redis,
+        ):
+            if event["type"] == "token":
+                accumulated_text += event["delta"]
+            elif event["type"] == "done":
+                final_event = event
+
+        citations_list = [
+            Citation(
+                reference=c["reference"],
+                chunk_id=c["chunk_id"],
+                document_name=c["document_name"],
+                page_number=c["page_number"],
+                content_preview=c["content_preview"],
+                invalid_citation=c["invalid_citation"],
+            )
+            for c in final_event.get("citations", [])
+        ]
+
+        return GenerationOutput(
+            run_id=UUID(final_event["run_id"]),
+            query=query,
+            generation=final_event.get("generation", accumulated_text),
+            citations=citations_list,
+            sources=final_event.get("sources", []),
+            input_tokens=final_event.get("input_tokens", 0),
+            output_tokens=final_event.get("output_tokens", 0),
+            latency_ms=final_event.get("latency_ms", 0),
+            model_used=final_event.get("model_used", "gpt-4o-mini"),
+            status="complete",
+        )

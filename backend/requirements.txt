@@ -25,3 +25,4 @@ arq
 python-multipart
 Pillow
 python-pptx
+sse-starlette

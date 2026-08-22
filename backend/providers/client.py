@@ -61,6 +61,19 @@ class NeuroFlowClient:
 
         return result
 
+    async def stream(
+        self,
+        messages: list[ChatMessage],
+        routing_criteria: RoutingCriteria,
+        **kwargs,
+    ) -> tuple[AsyncGenerator[str, None], str]:
+        """Route a chat stream request to the appropriate provider."""
+        model_config = await self.router.route(routing_criteria)
+        model_name = model_config["model"]
+        provider_name = model_config["provider"]
+        provider = self.providers[provider_name]
+        return provider.stream(messages, **kwargs), model_name
+
     async def embed(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings using the registered embedding provider."""
 
