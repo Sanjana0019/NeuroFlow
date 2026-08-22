@@ -76,7 +76,22 @@ async def lifespan(app: FastAPI):
         providers=providers,
     )
 
-    set_client(app.state.neuroflow_client)
+    # -----------------------------
+    # ARQ Redis queue pool
+    # -----------------------------
+    try:
+        from arq import create_pool as create_arq_pool
+        from arq.connections import RedisSettings
+
+        app.state.arq_redis = await create_arq_pool(
+            RedisSettings(
+                host=settings.redis_host,
+                port=settings.redis_port,
+                password=settings.redis_password,
+            )
+        )
+    except Exception:
+        app.state.arq_redis = None
 
     yield
 
@@ -89,6 +104,9 @@ async def lifespan(app: FastAPI):
 
         if close_method:
             await close_method()
+
+    if getattr(app.state, "arq_redis", None):
+        await app.state.arq_redis.close()
 
     await app.state.redis.aclose()
     await app.state.db_pool.close()

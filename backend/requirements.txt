@@ -13,3 +13,15 @@ openai
 anthropic
 pytest
 pytest-asyncio
+
+pypdfium2
+pytesseract
+pdfplumber
+python-docx
+pandas
+trafilatura
+tiktoken
+arq
+python-multipart
+Pillow
+python-pptx

@@ -1,0 +1,3 @@
+﻿NeuroFlow text extraction test.
+This is a Task 4 plain-text fixture.
+It should be extracted without OCR or external processing.

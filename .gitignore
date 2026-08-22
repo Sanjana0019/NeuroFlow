@@ -28,5 +28,8 @@ Thumbs.db
 # Logs
 *.log
 
+# Local runtime & uploaded data
+data/
+
 # Docker local overrides
 docker-compose.override.yml

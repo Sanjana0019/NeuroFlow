@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
 
     model_config = SettingsConfigDict(
-        env_file="../.env",
+        env_file=(".env", "../.env"),
         extra="ignore",
     )
 
