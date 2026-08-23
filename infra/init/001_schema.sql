@@ -44,14 +44,29 @@ CREATE INDEX chunks_content_fts_idx
 CREATE TABLE pipelines (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT UNIQUE NOT NULL,
+    description TEXT,
+    version INT NOT NULL DEFAULT 1,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
     config JSONB NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE pipeline_versions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    pipeline_id UUID NOT NULL
+        REFERENCES pipelines(id) ON DELETE CASCADE,
+    version INT NOT NULL,
+    config JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (pipeline_id, version)
 );
 
 CREATE TABLE pipeline_runs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     pipeline_id UUID NOT NULL
         REFERENCES pipelines(id),
+    pipeline_version INT NOT NULL DEFAULT 1,
     query TEXT NOT NULL,
     retrieved_chunk_ids UUID[],
     generation TEXT,

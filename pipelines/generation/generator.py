@@ -55,31 +55,39 @@ class Generator:
             return 0
         return len(self.tokenizer.encode(text))
 
-    async def _ensure_pipeline_id(self, conn, pipeline_id: UUID | str | None) -> UUID:
-        """Ensure a valid pipeline_id exists in the pipelines table."""
+    async def _ensure_pipeline_id_and_version(
+        self, conn, pipeline_id: UUID | str | None, pipeline_version: int | None = None
+    ) -> tuple[UUID, int]:
+        """Ensure a valid pipeline_id and pipeline_version exists."""
         if pipeline_id:
             try:
                 p_uuid = UUID(str(pipeline_id))
-                row = await conn.fetchrow("SELECT id FROM pipelines WHERE id = $1", p_uuid)
+                row = await conn.fetchrow("SELECT id, version FROM pipelines WHERE id = $1", p_uuid)
                 if row:
-                    return p_uuid
+                    version = pipeline_version or (row["version"] if "version" in row and row["version"] is not None else 1)
+                    return p_uuid, version
             except Exception:
                 pass
 
         # Fetch or seed default pipeline
-        row = await conn.fetchrow("SELECT id FROM pipelines LIMIT 1")
+        row = await conn.fetchrow("SELECT id, version FROM pipelines LIMIT 1")
         if row:
-            return row["id"]
+            version = pipeline_version or (row["version"] if "version" in row and row["version"] is not None else 1)
+            return row["id"], version
 
         new_id = await conn.fetchval(
             """
-            INSERT INTO pipelines (name, config)
-            VALUES ('default_rag_pipeline', '{"type": "rag", "version": "1.0"}')
+            INSERT INTO pipelines (name, version, config)
+            VALUES ('default_rag_pipeline', 1, '{"type": "rag", "version": "1.0"}')
             ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
             RETURNING id
             """
         )
-        return new_id
+        return new_id, 1
+
+    async def _ensure_pipeline_id(self, conn, pipeline_id: UUID | str | None) -> UUID:
+        pid, _ = await self._ensure_pipeline_id_and_version(conn, pipeline_id)
+        return pid
 
     async def _create_pipeline_run(
         self,
@@ -87,20 +95,23 @@ class Generator:
         pipeline_id: UUID,
         query: str,
         retrieved_chunk_ids: list[UUID],
+        pipeline_version: int = 1,
     ) -> UUID:
         """Create an initial pipeline_runs record with status='running'."""
         run_id = await conn.fetchval(
             """
             INSERT INTO pipeline_runs (
                 pipeline_id,
+                pipeline_version,
                 query,
                 retrieved_chunk_ids,
                 status
             )
-            VALUES ($1, $2, $3, 'running')
+            VALUES ($1, $2, $3, $4, 'running')
             RETURNING id
             """,
             pipeline_id,
+            pipeline_version,
             query,
             retrieved_chunk_ids,
         )
@@ -158,6 +169,7 @@ class Generator:
         chunks_used: list[RetrievalResult] | None = None,
         query_type: str = "factual",
         pipeline_id: UUID | str | None = None,
+        pipeline_version: int | None = None,
         db_pool=None,
         arq_redis=None,
         model_override: str | None = None,
@@ -198,10 +210,13 @@ class Generator:
         if db_pool is not None:
             try:
                 async with db_pool.acquire() as conn:
-                    valid_pipeline_id = await self._ensure_pipeline_id(conn, pipeline_id)
+                    valid_pipeline_id, resolved_version = await self._ensure_pipeline_id_and_version(
+                        conn, pipeline_id, pipeline_version
+                    )
                     run_id = await self._create_pipeline_run(
                         conn=conn,
                         pipeline_id=valid_pipeline_id,
+                        pipeline_version=resolved_version,
                         query=query,
                         retrieved_chunk_ids=chunk_uuids,
                     )
@@ -315,8 +330,10 @@ class Generator:
         chunks_used: list[RetrievalResult] | None = None,
         query_type: str = "factual",
         pipeline_id: UUID | str | None = None,
+        pipeline_version: int | None = None,
         db_pool=None,
         arq_redis=None,
+        model_override: str | None = None,
     ) -> GenerationOutput:
         """Non-streaming generation returning the aggregated GenerationOutput."""
         accumulated_text = ""
@@ -328,8 +345,10 @@ class Generator:
             chunks_used=chunks_used,
             query_type=query_type,
             pipeline_id=pipeline_id,
+            pipeline_version=pipeline_version,
             db_pool=db_pool,
             arq_redis=arq_redis,
+            model_override=model_override,
         ):
             if event["type"] == "token":
                 accumulated_text += event["delta"]

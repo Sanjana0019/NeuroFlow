@@ -52,7 +52,11 @@ class QueryResponse(BaseModel):
     status: str = "complete"
 
 
-def _get_retrieval_pipeline(request: Request) -> RetrievalPipeline:
+def _get_retrieval_pipeline(
+    request: Request,
+    token_budget: int = 4000,
+    enable_query_expansion: bool = True,
+) -> RetrievalPipeline:
     """Instantiate RetrievalPipeline from app state resources."""
     db_pool = request.app.state.db_pool
     client = getattr(request.app.state, "neuroflow_client", None)
@@ -60,13 +64,14 @@ def _get_retrieval_pipeline(request: Request) -> RetrievalPipeline:
     retriever = Retriever(db_pool=db_pool, embedder=client)
     query_processor = QueryProcessor(client=client)
     reranker = Reranker(client=client)
-    context_assembler = ContextAssembler(token_budget=4000)
+    context_assembler = ContextAssembler(token_budget=token_budget)
 
     return RetrievalPipeline(
         retriever=retriever,
         query_processor=query_processor,
         reranker=reranker,
         context_assembler=context_assembler,
+        enable_query_expansion=enable_query_expansion,
     )
 
 
@@ -84,13 +89,51 @@ async def execute_query(
     client = getattr(request.app.state, "neuroflow_client", None)
     arq_redis = getattr(request.app.state, "arq_redis", None)
 
+    # Resolve pipeline configuration if pipeline_id is provided
+    pipeline_version = 1
+    top_k = 5
+    retrieval_k = 20
+    token_budget = 4000
+    enable_query_expansion = True
+    auto_eval = True
+
+    if body.pipeline_id and db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT id, version, config FROM pipelines WHERE id = $1",
+                    UUID(str(body.pipeline_id)),
+                )
+                if row:
+                    pipeline_version = row.get("version", 1) or 1
+                    cfg_raw = row["config"]
+                    if isinstance(cfg_raw, str):
+                        cfg_raw = json.loads(cfg_raw)
+                    if isinstance(cfg_raw, dict):
+                        if "retrieval" in cfg_raw:
+                            top_k = cfg_raw["retrieval"].get("top_k_after_rerank", top_k)
+                            retrieval_k = cfg_raw["retrieval"].get("dense_k", retrieval_k)
+                            enable_query_expansion = cfg_raw["retrieval"].get("query_expansion", enable_query_expansion)
+                        if "generation" in cfg_raw:
+                            token_budget = cfg_raw["generation"].get("max_context_tokens", token_budget)
+                        if "evaluation" in cfg_raw:
+                            auto_eval = cfg_raw["evaluation"].get("auto_evaluate", auto_eval)
+        except Exception as exc:
+            logger.warning("Could not load pipeline config for id %s: %s", body.pipeline_id, exc)
+
     # 1. Non-Streaming: execute end-to-end and return complete JSON
     if not body.stream:
-        pipeline = _get_retrieval_pipeline(request)
+        pipeline = _get_retrieval_pipeline(
+            request,
+            token_budget=token_budget,
+            enable_query_expansion=enable_query_expansion,
+        )
         chunks, assembled_context, processed_query = await pipeline.run(
             query=query_text,
             mode="full",
-            top_k=5,
+            top_k=top_k,
+            retrieval_k=retrieval_k,
+            token_budget=token_budget,
         )
 
         generator = Generator(client=client)
@@ -100,8 +143,9 @@ async def execute_query(
             chunks_used=chunks,
             query_type=processed_query.query_type,
             pipeline_id=body.pipeline_id,
+            pipeline_version=pipeline_version,
             db_pool=db_pool,
-            arq_redis=arq_redis,
+            arq_redis=(arq_redis if auto_eval else None),
         )
 
         return QueryResponse(
