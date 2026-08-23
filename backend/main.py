@@ -21,7 +21,7 @@ from api.pipelines import router as pipelines_router
 from api.compare import router as compare_router
 from api.finetune import router as finetune_router
 from config import settings
-from db.health import check_mlflow, check_postgres, check_redis
+from db.health import check_mlflow, check_postgres, check_redis, perform_full_health_check
 from db.migrations import check_schema
 from db.pool import create_pool
 from providers.client import NeuroFlowClient, set_client
@@ -165,23 +165,15 @@ Instrumentator().instrument(app).expose(app)
 
 
 @app.get("/health")
-async def health():
-    """Check the health of NeuroFlow dependencies."""
+async def health(request: Request):
+    """Check the health and resilience status of NeuroFlow dependencies and circuit breakers."""
+    db_pool = getattr(app.state, "db_pool", None)
+    redis_client = getattr(app.state, "redis", None) or getattr(app.state, "arq_redis", None)
 
-    postgres_ok = await check_postgres(app.state.db_pool)
-    redis_ok = await check_redis()
-    mlflow_ok = await check_mlflow()
-
-    all_healthy = postgres_ok and redis_ok and mlflow_ok
-
-    return {
-        "status": "ok" if all_healthy else "degraded",
-        "checks": {
-            "postgres": postgres_ok,
-            "redis": redis_ok,
-            "mlflow": mlflow_ok,
-        },
-    }
+    return await perform_full_health_check(
+        db_pool=db_pool,
+        redis_client=redis_client,
+    )
 
 
 @app.get("/")

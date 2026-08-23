@@ -4,12 +4,16 @@ from typing import AsyncGenerator
 from opentelemetry import trace
 from redis.asyncio import Redis
 
+from resilience.circuit_breaker import circuit_breaker
+from resilience.rate_limiter import get_global_llm_limiter
+from resilience.timeout_manager import TimeoutManager
+
 from .base import ChatMessage, GenerationResult
 from .router import ModelRouter, RoutingCriteria
 
 
 class NeuroFlowClient:
-    """High-level client for model routing, generation, embeddings, and metrics."""
+    """High-level client for model routing, generation, embeddings, and metrics with resilience."""
 
     def __init__(
         self,
@@ -20,6 +24,7 @@ class NeuroFlowClient:
         self.providers = providers
         self.router = ModelRouter(redis)
         self.tracer = trace.get_tracer("neuroflow.providers")
+        self.timeout_manager = TimeoutManager(redis=redis)
 
     async def chat(
         self,
@@ -27,7 +32,7 @@ class NeuroFlowClient:
         routing_criteria: RoutingCriteria,
         **kwargs,
     ) -> GenerationResult:
-        """Route a chat request to the appropriate provider."""
+        """Route a chat request to the appropriate provider with circuit breaker, rate limiting, and timeout."""
 
         model_config = await self.router.route(routing_criteria)
 
@@ -36,15 +41,25 @@ class NeuroFlowClient:
 
         provider = self.providers[provider_name]
 
+        # 1. Global LLM rate limiter
+        limiter = get_global_llm_limiter(provider=provider_name, redis=self.redis)
+        await limiter.acquire(tokens=1.0)
+
         start_time = time.perf_counter()
 
         with self.tracer.start_as_current_span(
             "llm.chat",
         ) as span:
-            result = await provider.complete(
-                messages,
-                **kwargs,
-            )
+            # 2. Circuit breaker protection
+            async with circuit_breaker(provider_name, redis=self.redis):
+                # 3. Timeout manager with adaptive p95 latency tracking
+                result = await self.timeout_manager.execute(
+                    "chat_completion",
+                    provider.complete(
+                        messages,
+                        **kwargs,
+                    ),
+                )
 
             latency_ms = (time.perf_counter() - start_time) * 1000
 
@@ -72,10 +87,15 @@ class NeuroFlowClient:
         model_name = model_config["model"]
         provider_name = model_config["provider"]
         provider = self.providers[provider_name]
+
+        # Rate limiter
+        limiter = get_global_llm_limiter(provider=provider_name, redis=self.redis)
+        await limiter.acquire(tokens=1.0)
+
         return provider.stream(messages, **kwargs), model_name
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
-        """Generate embeddings using the registered embedding provider."""
+        """Generate embeddings using the registered embedding provider with timeout and circuit breaker."""
 
         provider = self.providers["openai"]
 
@@ -84,7 +104,11 @@ class NeuroFlowClient:
         with self.tracer.start_as_current_span(
             "llm.embed",
         ) as span:
-            embeddings = await provider.embed(texts)
+            async with circuit_breaker("openai", redis=self.redis):
+                embeddings = await self.timeout_manager.execute(
+                    "embedding",
+                    provider.embed(texts),
+                )
 
             latency_ms = (time.perf_counter() - start_time) * 1000
 

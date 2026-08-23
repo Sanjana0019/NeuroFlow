@@ -12,6 +12,7 @@ from evaluation.metrics.answer_relevance import evaluate_answer_relevance
 from evaluation.metrics.context_precision import evaluate_context_precision
 from evaluation.metrics.context_recall import evaluate_context_recall
 from evaluation.metrics.faithfulness import evaluate_faithfulness
+from backend.resilience.timeout_manager import execute_with_timeout
 
 logger = logging.getLogger("neuroflow.evaluation.judge")
 tracer = trace.get_tracer("neuroflow.evaluation")
@@ -93,12 +94,19 @@ class EvaluationJudge:
                 answer=answer,
                 client=self.client,
             )
+            async def _gather_eval():
+                return await asyncio.gather(
+                    faithfulness_task,
+                    relevance_task,
+                    precision_task,
+                    recall_task,
+                )
 
-            f_score, r_score, p_score, rc_score = await asyncio.gather(
-                faithfulness_task,
-                relevance_task,
-                precision_task,
-                recall_task,
+            redis_client = getattr(self.client, "redis", None) if self.client else None
+            f_score, r_score, p_score, rc_score = await execute_with_timeout(
+                "evaluation",
+                _gather_eval(),
+                redis=redis_client,
             )
 
             # 2. Composite Overall Score Calculation

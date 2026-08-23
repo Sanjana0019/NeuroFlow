@@ -6,9 +6,12 @@ from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from backend.db.documents import DocumentRepository
+from backend.resilience.backpressure import check_ingestion_backpressure
+from backend.resilience.rate_limiter import EndpointRateLimiter
 
 router = APIRouter(tags=["Ingestion"])
 
@@ -36,6 +39,9 @@ class IngestResponse(BaseModel):
     document_id: UUID
     status: str
     duplicate: bool = False
+    warning: str | None = None
+    estimated_wait_minutes: int | None = None
+    queue_depth: int | None = None
 
 
 class DocumentStatusResponse(BaseModel):
@@ -48,6 +54,34 @@ class DocumentStatusResponse(BaseModel):
 @router.post("/ingest", response_model=IngestResponse, status_code=202)
 async def ingest_document(request: Request):
     """Enqueue document ingestion job from either multipart file upload or JSON URL."""
+    # 1. API Rate Limiting (10 requests/hour/IP)
+    redis_client = getattr(request.app.state, "redis", None) or getattr(request.app.state, "arq_redis", None)
+    client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else "127.0.0.1")
+    if "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+
+    allowed, retry_after = await EndpointRateLimiter.check_rate_limit(
+        redis=redis_client,
+        client_ip=client_ip,
+        endpoint="ingest",
+        max_requests=10,
+        window_seconds=3600,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded for ingestion (10 requests/hour/IP)",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    # 2. Ingestion Backpressure Check
+    bp_result = await check_ingestion_backpressure(redis_client)
+    if bp_result["action"] == "reject":
+        return JSONResponse(
+            status_code=503,
+            content=bp_result["payload"],
+        )
+
     content_type = request.headers.get("content-type", "")
     db_pool = request.app.state.db_pool
 
@@ -224,10 +258,16 @@ async def ingest_document(request: Request):
             document_id=str(document_id),
         )
 
+    warning = bp_result.get("warning") if bp_result.get("action") == "warn" else None
+    estimated_wait = bp_result.get("estimated_wait_minutes") if bp_result.get("action") == "warn" else None
+
     return IngestResponse(
         document_id=document_id,
         status="queued",
         duplicate=False,
+        warning=warning,
+        estimated_wait_minutes=estimated_wait,
+        queue_depth=bp_result.get("queue_depth"),
     )
 
 

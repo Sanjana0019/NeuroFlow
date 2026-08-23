@@ -30,6 +30,7 @@ except ImportError:
 from pipelines.ingestion.chunker import Chunker
 from pipelines.ingestion.dispatcher import IngestionDispatcher
 from pipelines.ingestion.embedder import ChunkEmbedder
+from backend.resilience.timeout_manager import TimeoutManager
 
 logger = logging.getLogger("neuroflow.ingestion")
 tracer = trace.get_tracer("neuroflow.ingestion")
@@ -101,13 +102,18 @@ async def process_ingestion_job(
             if persisted_doc_id is not None:
                 await repository.update_document_status(persisted_doc_id, "processing")
 
-            # 1. Extraction via Unified Ingestion Dispatcher
+            # 1. Extraction via Unified Ingestion Dispatcher with TimeoutManager
             dispatcher = ctx.get("dispatcher") or IngestionDispatcher()
-            dispatch_result = dispatcher.dispatch(source)
-            if inspect.iscoroutine(dispatch_result):
-                extracted_pages = await dispatch_result
-            else:
-                extracted_pages = dispatch_result
+            timeout_mgr = ctx.get("timeout_manager") or TimeoutManager(redis=ctx.get("redis"))
+            task_type = "url_fetch" if inferred_source_type == "url" else "file_extraction"
+
+            async def _extract_call():
+                res = dispatcher.dispatch(source)
+                if inspect.iscoroutine(res):
+                    return await res
+                return res
+
+            extracted_pages = await timeout_mgr.execute(task_type, _extract_call())
 
             span.set_attribute("page_count", len(extracted_pages))
 

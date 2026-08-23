@@ -15,6 +15,7 @@ from pipelines.retrieval.pipeline import RetrievalPipeline
 from pipelines.retrieval.query_processor import QueryProcessor
 from pipelines.retrieval.reranker import Reranker
 from pipelines.retrieval.retriever import Retriever
+from backend.resilience.rate_limiter import EndpointRateLimiter, get_pipeline_rate_limiter
 
 logger = logging.getLogger("neuroflow.api.query")
 
@@ -81,6 +82,26 @@ async def execute_query(
     request: Request,
 ):
     """Execute grounded RAG query with either full JSON response or SSE streaming setup."""
+    # 1. IP Rate Limiting (60 requests/minute/IP)
+    redis_client = getattr(request.app.state, "redis", None) or getattr(request.app.state, "arq_redis", None)
+    client_ip = request.headers.get("x-forwarded-for") or (request.client.host if request.client else "127.0.0.1")
+    if "," in client_ip:
+        client_ip = client_ip.split(",")[0].strip()
+
+    allowed, retry_after = await EndpointRateLimiter.check_rate_limit(
+        redis=redis_client,
+        client_ip=client_ip,
+        endpoint="query",
+        max_requests=60,
+        window_seconds=60,
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded for query (60 requests/minute/IP)",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     query_text = (body.query or "").strip()
     if not query_text:
         raise HTTPException(status_code=400, detail="Query cannot be empty")
@@ -110,6 +131,12 @@ async def execute_query(
                     if isinstance(cfg_raw, str):
                         cfg_raw = json.loads(cfg_raw)
                     if isinstance(cfg_raw, dict):
+                        # Enforce per-pipeline rate limit if configured
+                        pipe_rpm = cfg_raw.get("rate_limit_rpm") or (cfg_raw.get("routing") or {}).get("rate_limit_rpm")
+                        if pipe_rpm:
+                            pipe_limiter = get_pipeline_rate_limiter(body.pipeline_id, rate_limit_rpm=int(pipe_rpm), redis=redis_client)
+                            await pipe_limiter.acquire(tokens=1.0)
+
                         if "retrieval" in cfg_raw:
                             top_k = cfg_raw["retrieval"].get("top_k_after_rerank", top_k)
                             retrieval_k = cfg_raw["retrieval"].get("dense_k", retrieval_k)
@@ -118,6 +145,8 @@ async def execute_query(
                             token_budget = cfg_raw["generation"].get("max_context_tokens", token_budget)
                         if "evaluation" in cfg_raw:
                             auto_eval = cfg_raw["evaluation"].get("auto_evaluate", auto_eval)
+        except HTTPException:
+            raise
         except Exception as exc:
             logger.warning("Could not load pipeline config for id %s: %s", body.pipeline_id, exc)
 

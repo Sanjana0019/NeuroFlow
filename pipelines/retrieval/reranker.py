@@ -4,6 +4,7 @@ import re
 
 from backend.providers.base import ChatMessage
 from backend.providers.router import RoutingCriteria
+from backend.resilience.timeout_manager import execute_with_timeout
 from pipelines.retrieval.models import RetrievalResult
 
 logger = logging.getLogger("neuroflow.retrieval.reranker")
@@ -73,9 +74,13 @@ class Reranker:
         # Restrict to max_candidates for reranking
         selected_candidates = candidates[: self.max_candidates]
 
-        # Score candidates in parallel
+        # Score candidates in parallel with TimeoutManager
         tasks = [self._score_pair(query, candidate) for candidate in selected_candidates]
-        scores = await asyncio.gather(*tasks, return_exceptions=True)
+        async def _gather_scores():
+            return await asyncio.gather(*tasks, return_exceptions=True)
+
+        redis_client = getattr(self.client, "redis", None) if self.client else None
+        scores = await execute_with_timeout("reranking", _gather_scores(), redis=redis_client)
 
         scored_candidates: list[tuple[float, RetrievalResult]] = []
         for idx, candidate in enumerate(selected_candidates):
