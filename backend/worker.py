@@ -241,6 +241,22 @@ async def evaluate_pipeline_run(ctx: dict[str, Any], run_id: str) -> None:
     )
 
 
+async def poll_finetune_job(ctx: dict[str, Any], job_id: str) -> None:
+    """ARQ background job to poll fine-tuning job status from OpenAI and register model on completion."""
+    db_pool = ctx.get("db_pool")
+    redis_client = ctx.get("redis")
+    if not db_pool:
+        return
+
+    from pipelines.finetuning.job_manager import FineTuningJobManager
+    manager = FineTuningJobManager()
+    await manager.poll_job_status(
+        job_id=job_id,
+        db_pool=db_pool,
+        redis_client=redis_client,
+    )
+
+
 async def shutdown(ctx: dict[str, Any]) -> None:
     """Close active resources on worker shutdown."""
     if "redis" in ctx:
@@ -252,7 +268,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """ARQ Worker configuration settings."""
 
-    functions = [process_ingestion_job, evaluate_pipeline_run]
+    functions = [process_ingestion_job, evaluate_pipeline_run, poll_finetune_job]
     redis_settings = RedisSettings(
         host=settings.redis_host,
         port=settings.redis_port,

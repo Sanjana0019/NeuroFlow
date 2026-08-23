@@ -114,6 +114,7 @@ CREATE TABLE finetune_jobs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     provider_job_id TEXT,
     base_model TEXT NOT NULL,
+    fine_tuned_model TEXT,
     status VARCHAR(20) NOT NULL DEFAULT 'pending',
     training_pair_count INT,
     mlflow_run_id TEXT,

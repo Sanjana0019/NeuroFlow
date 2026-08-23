@@ -35,6 +35,7 @@ async def check_schema(pool: asyncpg.Pool) -> bool:
             );
 
             ALTER TABLE pipeline_runs ADD COLUMN IF NOT EXISTS pipeline_version INT NOT NULL DEFAULT 1;
+            ALTER TABLE finetune_jobs ADD COLUMN IF NOT EXISTS fine_tuned_model TEXT;
             """
         )
         return True

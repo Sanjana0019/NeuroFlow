@@ -19,6 +19,7 @@ from api.query import router as query_router
 from api.runs import router as runs_router
 from api.pipelines import router as pipelines_router
 from api.compare import router as compare_router
+from api.finetune import router as finetune_router
 from config import settings
 from db.health import check_mlflow, check_postgres, check_redis
 from db.migrations import check_schema
@@ -154,6 +155,7 @@ app.include_router(query_router)
 app.include_router(runs_router)
 app.include_router(pipelines_router)
 app.include_router(compare_router)
+app.include_router(finetune_router)
 
 # Automatically create traces for incoming HTTP requests.
 app.add_middleware(OpenTelemetryMiddleware)
