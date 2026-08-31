@@ -9,7 +9,7 @@ T = TypeVar("T")
 
 # Context-specific static timeouts (in seconds)
 STATIC_TIMEOUTS: dict[str, float] = {
-    "embedding": 10.0,
+    "embedding": 60.0,
     "chat_completion": 60.0,
     "reranking": 15.0,
     "evaluation": 120.0,
@@ -19,12 +19,12 @@ STATIC_TIMEOUTS: dict[str, float] = {
 
 # Bounds for adaptive timeouts (min_timeout, max_timeout)
 TIMEOUT_BOUNDS: dict[str, tuple[float, float]] = {
-    "embedding": (2.0, 30.0),
-    "chat_completion": (5.0, 180.0),
-    "reranking": (2.0, 60.0),
-    "evaluation": (10.0, 300.0),
-    "file_extraction": (5.0, 120.0),
-    "url_fetch": (3.0, 60.0),
+    "embedding": (30.0, 180.0),
+    "chat_completion": (30.0, 180.0),
+    "reranking": (10.0, 60.0),
+    "evaluation": (30.0, 300.0),
+    "file_extraction": (15.0, 120.0),
+    "url_fetch": (10.0, 60.0),
 }
 
 # Minimum observations required to enable adaptive timeout calculation

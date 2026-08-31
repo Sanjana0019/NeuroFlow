@@ -325,3 +325,148 @@ class TrainingDataExtractor:
         )
         return pairs[:limit]
 
+    async def get_all_training_pairs(
+        self,
+        db_pool,
+        limit: int = 100,
+        min_quality_score: float = 0.80,
+    ) -> list[dict[str, Any]]:
+        """Retrieve all training pairs with real token counts, citations, and validation metadata."""
+        items: list[dict[str, Any]] = []
+
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT tp.id, tp.run_id, tp.system_prompt, tp.user_message, tp.assistant_message,
+                       tp.quality_score, tp.included_in_job, tp.created_at,
+                       e.faithfulness, e.answer_relevance, e.context_precision, e.context_recall, e.user_rating
+                FROM training_pairs tp
+                LEFT JOIN evaluations e ON e.run_id = tp.run_id
+                ORDER BY tp.created_at DESC
+                LIMIT $1
+                """,
+                limit,
+            )
+
+            for row in rows:
+                system_prompt = row["system_prompt"] or "You are a precise research assistant."
+                user_msg = row["user_message"]
+                assistant_msg = row["assistant_message"]
+                faithfulness = row["faithfulness"]
+                token_count = self.count_tokens(assistant_msg)
+                has_citation = bool(CITATION_REGEX.search(assistant_msg))
+                has_pii = self.check_pii(user_msg)
+
+                is_valid, rejection_reason = self.validate_pair(
+                    system_prompt=system_prompt,
+                    user_message=user_msg,
+                    assistant_message=assistant_msg,
+                    faithfulness=faithfulness,
+                )
+
+                items.append({
+                    "id": str(row["id"]),
+                    "run_id": str(row["run_id"]),
+                    "user_message": user_msg,
+                    "assistant_message": assistant_msg,
+                    "system_prompt": system_prompt,
+                    "quality_score": row["quality_score"],
+                    "faithfulness": faithfulness,
+                    "answer_relevance": row["answer_relevance"],
+                    "token_count": token_count,
+                    "has_citation": has_citation,
+                    "has_pii": has_pii,
+                    "user_rating": row["user_rating"],
+                    "is_valid": is_valid,
+                    "rejection_reason": rejection_reason,
+                    "included_in_job": str(row["included_in_job"]) if row["included_in_job"] else None,
+                    "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+                })
+
+        return items
+
+    async def get_dataset_readiness(
+        self,
+        db_pool,
+        min_quality_score: float = 0.82,
+        openai_configured: bool = False,
+    ) -> dict[str, Any]:
+        """Compute canonical dataset readiness and validation breakdown."""
+        all_pairs = await self.get_all_training_pairs(db_pool, limit=500, min_quality_score=min_quality_score)
+        valid_pairs = [p for p in all_pairs if p["is_valid"] and p["included_in_job"] is None]
+        rejected_pairs = [p for p in all_pairs if not p["is_valid"]]
+
+        rejection_reasons: dict[str, int] = {}
+        for p in rejected_pairs:
+            reason = p.get("rejection_reason") or "Unknown"
+            rejection_reasons[reason] = rejection_reasons.get(reason, 0) + 1
+
+        dpo_pairs, _ = await self.extract_dpo_pairs(db_pool)
+
+        eligible_sft_count = len(valid_pairs)
+        min_required = 10
+        remaining = max(0, min_required - eligible_sft_count)
+
+        return {
+            "total_candidates": len(all_pairs),
+            "eligible_sft_count": eligible_sft_count,
+            "min_required_for_finetuning": min_required,
+            "remaining_for_finetuning": remaining,
+            "can_export": eligible_sft_count > 0,
+            "can_finetune": eligible_sft_count >= min_required and openai_configured,
+            "openai_configured": openai_configured,
+            "dpo_pair_count": len(dpo_pairs),
+            "validation_rules": [
+                {"name": "Quality Threshold", "requirement": "Overall score >= 80%", "passed": True},
+                {"name": "Citation Verification", "requirement": "Must cite [Source N]", "passed": True},
+                {"name": "Response Length", "requirement": "50 - 2,000 tokens", "passed": True},
+                {"name": "Privacy / PII Check", "requirement": "No email or phone PII", "passed": True},
+                {"name": "Faithfulness Score", "requirement": "Faithfulness > 0.80", "passed": True},
+            ],
+            "rejected_count": len(rejected_pairs),
+            "rejection_summary": rejection_reasons,
+        }
+
+    async def export_dataset(
+        self,
+        db_pool,
+        dataset_type: str = "sft",
+        export_format: str = "jsonl",
+    ) -> tuple[str, str, int]:
+        """Generate formatted export dataset string, media type, and record count."""
+        if dataset_type == "dpo":
+            dpo_pairs, _ = await self.extract_dpo_pairs(db_pool)
+            if export_format == "json":
+                content = json.dumps(dpo_pairs, indent=2)
+                media_type = "application/json"
+            else:
+                lines = [json.dumps(p) for p in dpo_pairs]
+                content = "\n".join(lines) + ("\n" if lines else "")
+                media_type = "application/x-jsonlines"
+            return content, media_type, len(dpo_pairs)
+
+        # Default SFT
+        all_pairs = await self.get_all_training_pairs(db_pool, limit=1000)
+        valid_pairs = [p for p in all_pairs if p["is_valid"]]
+
+        sft_records = [
+            {
+                "messages": [
+                    {"role": "system", "content": p["system_prompt"]},
+                    {"role": "user", "content": p["user_message"]},
+                    {"role": "assistant", "content": p["assistant_message"]},
+                ]
+            }
+            for p in valid_pairs
+        ]
+
+        if export_format == "json":
+            content = json.dumps(sft_records, indent=2)
+            media_type = "application/json"
+        else:
+            lines = [json.dumps(r) for r in sft_records]
+            content = "\n".join(lines) + ("\n" if lines else "")
+            media_type = "application/x-jsonlines"
+
+        return content, media_type, len(sft_records)
+

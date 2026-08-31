@@ -84,4 +84,23 @@ class RetrievalPipeline:
             custom_budget=token_budget,
         )
 
+        if mode == "dense_only":
+            assembled_context.stage_counts = {
+                "dense": len(final_chunks),
+                "sparse": 0,
+                "metadata": 0,
+                "rrf": len(final_chunks),
+                "reranker": len(final_chunks),
+                "final_context": len(assembled_context.chunks_used),
+            }
+        else:
+            assembled_context.stage_counts = {
+                "dense": len(candidates_by_source.get("dense", [])),
+                "sparse": len(candidates_by_source.get("sparse", [])),
+                "metadata": len(candidates_by_source.get("metadata", [])),
+                "rrf": len(fused_candidates) if "fused_candidates" in locals() else len(final_chunks),
+                "reranker": len(final_chunks),
+                "final_context": len(assembled_context.chunks_used),
+            }
+
         return final_chunks, assembled_context, processed_query

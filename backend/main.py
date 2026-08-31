@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from prometheus_fastapi_instrumentator import Instrumentator
 
 from opentelemetry import trace
@@ -13,6 +13,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from redis.asyncio import Redis
 from providers.openai_provider import OpenAIProvider
 from providers.anthropic_provider import AnthropicProvider
+from providers.openrouter_provider import OpenRouterProvider
 
 from api.ingest import router as ingest_router
 from api.query import router as query_router
@@ -62,6 +63,14 @@ async def lifespan(app: FastAPI):
 
     providers = {}
 
+    if settings.openrouter_api_key:
+        providers["openrouter"] = OpenRouterProvider(
+            api_key=settings.openrouter_api_key,
+            model=settings.openrouter_llm_model,
+            embedding_model=settings.openrouter_embedding_model,
+            base_url=settings.openrouter_base_url,
+        )
+
     if settings.openai_api_key:
         providers["openai"] = OpenAIProvider(
             api_key=settings.openai_api_key,
@@ -72,6 +81,49 @@ async def lifespan(app: FastAPI):
             api_key=settings.anthropic_api_key,
         )
 
+    # Register default models in Redis for ModelRouter
+    router_models = []
+    if "openrouter" in providers:
+        router_models.append({
+            "model": settings.openrouter_llm_model,
+            "provider": "openrouter",
+            "is_judge": True,
+            "is_fine_tuned": False,
+            "supports_vision": False,
+            "context_window": 128_000,
+            "estimated_latency_ms": 250,
+            "estimated_cost_per_call": 0.0,
+            "task_types": ["generation", "query_processing", "reranking", "evaluation"],
+        })
+    if "openai" in providers:
+        router_models.append({
+            "model": "gpt-4o-mini",
+            "provider": "openai",
+            "is_judge": True,
+            "is_fine_tuned": False,
+            "supports_vision": False,
+            "context_window": 128_000,
+            "estimated_latency_ms": 200,
+            "estimated_cost_per_call": 0.0001,
+            "task_types": ["generation", "query_processing", "reranking", "evaluation"],
+        })
+    if "anthropic" in providers:
+        router_models.append({
+            "model": "claude-3-5-sonnet",
+            "provider": "anthropic",
+            "is_judge": True,
+            "is_fine_tuned": False,
+            "supports_vision": True,
+            "context_window": 200_000,
+            "estimated_latency_ms": 300,
+            "estimated_cost_per_call": 0.001,
+            "task_types": ["generation", "query_processing", "evaluation"],
+        })
+
+    if router_models:
+        import json
+        await app.state.redis.set("router:models", json.dumps(router_models))
+
     # -----------------------------
     # NeuroFlow client
     # -----------------------------
@@ -80,6 +132,7 @@ async def lifespan(app: FastAPI):
         redis=app.state.redis,
         providers=providers,
     )
+    set_client(app.state.neuroflow_client)
 
     # -----------------------------
     # ARQ Redis queue pool
@@ -156,6 +209,16 @@ app.include_router(runs_router)
 app.include_router(pipelines_router)
 app.include_router(compare_router)
 app.include_router(finetune_router)
+
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Automatically create traces for incoming HTTP requests.
 app.add_middleware(OpenTelemetryMiddleware)

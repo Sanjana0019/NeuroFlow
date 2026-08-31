@@ -16,6 +16,20 @@ logger = logging.getLogger("neuroflow.api.pipelines")
 router = APIRouter(prefix="/pipelines", tags=["Pipelines"])
 
 
+class PipelineSummaryMetrics(BaseModel):
+    has_data: bool = False
+    quality_score: float | None = None
+    quality_label: str = "Overall Quality"
+    faithfulness: float | None = None
+    faithfulness_change_pct: float | None = None
+    queries_7d: int = 0
+    queries_previous_7d: int = 0
+    queries_change_pct: float | None = None
+    latency_p50_ms: float | None = None
+    latency_change_pct: float | None = None
+    trend_7d: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class PipelineResponse(BaseModel):
     id: UUID
     name: str
@@ -27,6 +41,8 @@ class PipelineResponse(BaseModel):
     updated_at: datetime | None = None
     last_run_metrics: dict[str, Any] | None = None
     evaluation_summary: dict[str, Any] | None = None
+    metrics_summary: PipelineSummaryMetrics | None = None
+
 
 
 class PaginatedRunsResponse(BaseModel):
@@ -38,13 +54,23 @@ class PaginatedRunsResponse(BaseModel):
 
 
 class AnalyticsResponse(BaseModel):
+    pipeline_id: UUID
+    pipeline_name: str
+    total_runs: int
     retrieval_latency_p50: float
     retrieval_latency_p95: float
     retrieval_latency_p99: float
+    latency_p50_ms: float
+    latency_p95_ms: float
+    latency_p99_ms: float
     avg_generation_latency_ms: float
+    avg_latency_ms: float
     avg_evaluation_scores: dict[str, float | None]
     cost_per_query: float
+    cost_per_query_usd: float
+    total_cost_usd: float
     queries_per_day: list[dict[str, Any]]
+    recent_failures: list[dict[str, Any]]
 
 
 @router.post("", response_model=PipelineResponse, status_code=201)
@@ -122,17 +148,151 @@ async def create_pipeline(
     )
 
 
+async def compute_pipeline_summary_metrics(conn, pipeline_id: UUID, now: datetime) -> PipelineSummaryMetrics:
+    """Compute real 7-day, previous 7-day, and trend metrics for a specific pipeline from PostgreSQL."""
+    seven_days_ago = now - timedelta(days=7)
+    fourteen_days_ago = now - timedelta(days=14)
+
+    default_trend = []
+    for i in range(6, -1, -1):
+        d_str = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+        default_trend.append({"date": d_str, "query_count": 0})
+
+    try:
+        row = await conn.fetchrow(
+            """
+            SELECT
+                COUNT(CASE WHEN r.created_at >= $2 THEN 1 END) AS count_7d,
+                COUNT(CASE WHEN r.created_at >= $3 AND r.created_at < $2 THEN 1 END) AS count_prev_7d,
+                AVG(CASE WHEN r.created_at >= $2 THEN e.overall_score END) AS quality_7d,
+                AVG(e.overall_score) AS quality_all_time,
+                AVG(CASE WHEN r.created_at >= $2 THEN e.faithfulness END) AS faith_7d,
+                AVG(e.faithfulness) AS faith_all_time,
+                AVG(CASE WHEN r.created_at >= $3 AND r.created_at < $2 THEN e.faithfulness END) AS faith_prev_7d,
+                COUNT(r.id) AS total_runs
+            FROM pipeline_runs r
+            LEFT JOIN evaluations e ON e.run_id = r.id
+            WHERE r.pipeline_id = $1
+            """,
+            pipeline_id, seven_days_ago, fourteen_days_ago
+        )
+    except Exception as exc:
+        logger.warning("Error fetching 7d summary row for pipeline %s: %s", pipeline_id, exc)
+        row = None
+
+    if not row or (row.get("total_runs") or 0) == 0:
+        return PipelineSummaryMetrics(
+            has_data=False,
+            quality_score=None,
+            quality_label="Overall Quality",
+            faithfulness=None,
+            faithfulness_change_pct=None,
+            queries_7d=0,
+            queries_previous_7d=0,
+            queries_change_pct=None,
+            latency_p50_ms=None,
+            latency_change_pct=None,
+            trend_7d=default_trend,
+        )
+
+    count_7d = row["count_7d"] or 0
+    count_prev_7d = row["count_prev_7d"] or 0
+    query_change_pct = None
+    if count_prev_7d > 0:
+        query_change_pct = round(((count_7d - count_prev_7d) / count_prev_7d) * 100, 1)
+
+    lat_7d = None
+    lat_prev_7d = None
+    try:
+        lat_7d = await conn.fetchval(
+            """
+            SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY r.latency_ms)
+            FROM pipeline_runs r
+            WHERE r.pipeline_id = $1 AND r.created_at >= $2
+            """,
+            pipeline_id, seven_days_ago
+        )
+        if lat_7d is None and (row["total_runs"] or 0) > 0:
+            lat_7d = await conn.fetchval(
+                """
+                SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY r.latency_ms)
+                FROM pipeline_runs r
+                WHERE r.pipeline_id = $1
+                """,
+                pipeline_id
+            )
+
+        lat_prev_7d = await conn.fetchval(
+            """
+            SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY r.latency_ms)
+            FROM pipeline_runs r
+            WHERE r.pipeline_id = $1 AND r.created_at >= $3 AND r.created_at < $2
+            """,
+            pipeline_id, seven_days_ago, fourteen_days_ago
+        )
+    except Exception as exc:
+        logger.debug("Could not calculate percentile latency for pipeline %s: %s", pipeline_id, exc)
+
+    lat_change_pct = None
+    if lat_prev_7d and lat_7d and lat_prev_7d > 0:
+        lat_change_pct = round(((lat_7d - lat_prev_7d) / lat_prev_7d) * 100, 1)
+
+    quality_score = row["quality_7d"] if row["quality_7d"] is not None else row.get("quality_all_time")
+    faith_7d = row["faith_7d"] if row["faith_7d"] is not None else row.get("faith_all_time")
+    faith_prev_7d = row.get("faith_prev_7d")
+    faith_change_pct = None
+    if faith_prev_7d and faith_7d and faith_prev_7d > 0:
+        faith_change_pct = round(((faith_7d - faith_prev_7d) / faith_prev_7d) * 100, 1)
+
+    # 7-day daily trend
+    real_trend_7d = default_trend
+    try:
+        daily_rows = await conn.fetch(
+            """
+            SELECT DATE(created_at AT TIME ZONE 'UTC') AS day, COUNT(*) AS count
+            FROM pipeline_runs
+            WHERE pipeline_id = $1 AND created_at >= $2
+            GROUP BY DATE(created_at AT TIME ZONE 'UTC')
+            ORDER BY day ASC
+            """,
+            pipeline_id, seven_days_ago
+        )
+        if daily_rows:
+            daily_map = {str(r["day"]): r["count"] for r in daily_rows}
+            real_trend_7d = []
+            for i in range(6, -1, -1):
+                d_str = (now - timedelta(days=i)).strftime("%Y-%m-%d")
+                real_trend_7d.append({"date": d_str, "query_count": daily_map.get(d_str, 0)})
+    except Exception as exc:
+        logger.debug("Could not fetch daily trend for pipeline %s: %s", pipeline_id, exc)
+
+    return PipelineSummaryMetrics(
+        has_data=(row["total_runs"] or 0) > 0,
+        quality_score=round(quality_score, 4) if quality_score is not None else None,
+        quality_label="Overall Quality",
+        faithfulness=round(faith_7d, 4) if faith_7d is not None else None,
+        faithfulness_change_pct=faith_change_pct,
+        queries_7d=count_7d,
+        queries_previous_7d=count_prev_7d,
+        queries_change_pct=query_change_pct,
+        latency_p50_ms=round(lat_7d, 1) if lat_7d is not None else None,
+        latency_change_pct=lat_change_pct,
+        trend_7d=real_trend_7d,
+    )
+
+
 @router.get("", response_model=list[PipelineResponse])
 async def list_pipelines(
     request: Request,
     include_archived: bool = Query(default=False),
 ):
-    """List pipelines with last-run metrics."""
+    """List pipelines with last-run metrics and real 7-day performance metrics."""
     db_pool = getattr(request.app.state, "db_pool", None)
     if not db_pool:
         raise HTTPException(status_code=500, detail="Database pool not available")
 
     status_filter = "" if include_archived else "WHERE p.status != 'archived'"
+    now = datetime.now(timezone.utc)
 
     async with db_pool.acquire() as conn:
         rows = await conn.fetch(
@@ -150,28 +310,30 @@ async def list_pipelines(
             """
         )
 
-    results = []
-    for r in rows:
-        cfg = json.loads(r["config"]) if isinstance(r["config"], str) else r["config"]
-        metrics = {
-            "total_runs": r["total_runs"] or 0,
-            "last_run_at": r["last_run_at"].isoformat() if r["last_run_at"] else None,
-            "last_run_status": r["last_run_status"],
-            "last_run_latency_ms": r["last_run_latency_ms"],
-        }
-        results.append(
-            PipelineResponse(
-                id=r["id"],
-                name=r["name"],
-                description=r["description"],
-                version=r["version"],
-                status=r["status"],
-                config=cfg,
-                created_at=r["created_at"],
-                updated_at=r["updated_at"],
-                last_run_metrics=metrics,
+        results = []
+        for r in rows:
+            cfg = json.loads(r["config"]) if isinstance(r["config"], str) else r["config"]
+            last_run = {
+                "total_runs": r["total_runs"] or 0,
+                "last_run_at": r["last_run_at"].isoformat() if r["last_run_at"] else None,
+                "last_run_status": r["last_run_status"],
+                "last_run_latency_ms": r["last_run_latency_ms"],
+            }
+            summary = await compute_pipeline_summary_metrics(conn, r["id"], now)
+            results.append(
+                PipelineResponse(
+                    id=r["id"],
+                    name=r["name"],
+                    description=r["description"],
+                    version=r["version"],
+                    status=r["status"],
+                    config=cfg,
+                    created_at=r["created_at"],
+                    updated_at=r["updated_at"],
+                    last_run_metrics=last_run,
+                    metrics_summary=summary,
+                )
             )
-        )
     return results
 
 
@@ -185,6 +347,8 @@ async def get_pipeline(
     if not db_pool:
         raise HTTPException(status_code=500, detail="Database pool not available")
 
+    now = datetime.now(timezone.utc)
+
     async with db_pool.acquire() as conn:
         row = await conn.fetchrow(
             """
@@ -196,6 +360,8 @@ async def get_pipeline(
         )
         if not row:
             raise HTTPException(status_code=404, detail=f"Pipeline '{pipeline_id}' not found")
+
+        summary = await compute_pipeline_summary_metrics(conn, pipeline_id, now)
 
         # Fetch aggregate evaluation metrics
         eval_row = await conn.fetchrow(
@@ -214,27 +380,29 @@ async def get_pipeline(
             pipeline_id,
         )
 
-    cfg = json.loads(row["config"]) if isinstance(row["config"], str) else row["config"]
-    eval_summary = {
-        "total_runs": eval_row["total_runs"] or 0,
-        "avg_faithfulness": round(float(eval_row["avg_faithfulness"]), 4) if eval_row["avg_faithfulness"] is not None else None,
-        "avg_answer_relevance": round(float(eval_row["avg_answer_relevance"]), 4) if eval_row["avg_answer_relevance"] is not None else None,
-        "avg_context_precision": round(float(eval_row["avg_context_precision"]), 4) if eval_row["avg_context_precision"] is not None else None,
-        "avg_context_recall": round(float(eval_row["avg_context_recall"]), 4) if eval_row["avg_context_recall"] is not None else None,
-        "avg_overall_score": round(float(eval_row["avg_overall_score"]), 4) if eval_row["avg_overall_score"] is not None else None,
-    }
+        eval_summary = None
+        if eval_row and eval_row["total_runs"] and eval_row["total_runs"] > 0:
+            eval_summary = {
+                "total_runs": eval_row["total_runs"],
+                "avg_faithfulness": eval_row["avg_faithfulness"],
+                "avg_answer_relevance": eval_row["avg_answer_relevance"],
+                "avg_context_precision": eval_row["avg_context_precision"],
+                "avg_context_recall": eval_row["avg_context_recall"],
+                "avg_overall_score": eval_row["avg_overall_score"],
+            }
 
-    return PipelineResponse(
-        id=row["id"],
-        name=row["name"],
-        description=row["description"],
-        version=row["version"],
-        status=row["status"],
-        config=cfg,
-        created_at=row["created_at"],
-        updated_at=row["updated_at"],
-        evaluation_summary=eval_summary,
-    )
+        return PipelineResponse(
+            id=row["id"],
+            name=row["name"],
+            description=row["description"],
+            version=row["version"],
+            status=row["status"],
+            config=json.loads(row["config"]) if isinstance(row["config"], str) else row["config"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            evaluation_summary=eval_summary,
+            metrics_summary=summary,
+        )
 
 
 @router.patch("/{pipeline_id}", response_model=PipelineResponse)
@@ -427,10 +595,14 @@ async def get_pipeline_analytics(
         raise HTTPException(status_code=500, detail="Database pool not available")
 
     async with db_pool.acquire() as conn:
-        # Fetch runs with latency and tokens
+        # Fetch pipeline metadata
+        pipeline_row = await conn.fetchrow("SELECT name FROM pipelines WHERE id = $1", pipeline_id)
+        pipeline_name = pipeline_row["name"] if pipeline_row else "Unknown Pipeline"
+
+        # Fetch runs with latency, tokens, and evals
         runs = await conn.fetch(
             """
-            SELECT r.id, r.latency_ms, r.input_tokens, r.output_tokens, r.model_used, r.created_at,
+            SELECT r.id, r.latency_ms, r.input_tokens, r.output_tokens, r.model_used, r.status, r.created_at,
                    e.faithfulness, e.answer_relevance, e.context_precision, e.context_recall, e.overall_score
             FROM pipeline_runs r
             LEFT JOIN evaluations e ON e.run_id = r.id
@@ -454,6 +626,18 @@ async def get_pipeline_analytics(
             thirty_days_ago,
         )
 
+        # Recent failures (status='failed')
+        failed_rows = await conn.fetch(
+            """
+            SELECT id AS run_id, query, created_at AS timestamp, COALESCE(generation, 'Execution failed') AS error_message
+            FROM pipeline_runs
+            WHERE pipeline_id = $1 AND status = 'failed'
+            ORDER BY created_at DESC
+            LIMIT 5
+            """,
+            pipeline_id,
+        )
+
     latencies = [float(r["latency_ms"]) for r in runs if r["latency_ms"] is not None]
     p50 = calculate_percentile(latencies, 50.0)
     p95 = calculate_percentile(latencies, 95.0)
@@ -475,7 +659,7 @@ async def get_pipeline_analytics(
         "overall_score": round(sum(ov_scores) / len(ov_scores), 4) if ov_scores else None,
     }
 
-    # Cost per query
+    # Cost per query & total cost
     total_cost = sum(
         calculate_run_cost(
             input_tokens=r["input_tokens"] or 0,
@@ -491,12 +675,32 @@ async def get_pipeline_analytics(
         for row in daily_rows
     ]
 
+    recent_failures = [
+        {
+            "run_id": str(row["run_id"]),
+            "query": row["query"],
+            "timestamp": row["timestamp"].isoformat() if hasattr(row["timestamp"], "isoformat") else str(row["timestamp"]),
+            "error_message": row["error_message"],
+        }
+        for row in failed_rows
+    ]
+
     return AnalyticsResponse(
+        pipeline_id=pipeline_id,
+        pipeline_name=pipeline_name,
+        total_runs=len(runs),
         retrieval_latency_p50=p50,
         retrieval_latency_p95=p95,
         retrieval_latency_p99=p99,
+        latency_p50_ms=p50,
+        latency_p95_ms=p95,
+        latency_p99_ms=p99,
         avg_generation_latency_ms=avg_gen_latency,
+        avg_latency_ms=avg_gen_latency,
         avg_evaluation_scores=avg_eval,
         cost_per_query=cost_per_query,
+        cost_per_query_usd=cost_per_query,
+        total_cost_usd=round(total_cost, 6),
         queries_per_day=queries_per_day,
+        recent_failures=recent_failures,
     )

@@ -28,8 +28,13 @@ class FineTuningJobManager:
         openai_client: AsyncOpenAI | None = None,
         tracker: FineTuningTracker | None = None,
     ):
-        api_key = openai_api_key or settings.openai_api_key or "mock-key"
-        self.client = openai_client or AsyncOpenAI(api_key=api_key)
+        self.api_key = openai_api_key or settings.openai_api_key
+        if openai_client:
+            self.client = openai_client
+        elif self.api_key:
+            self.client = AsyncOpenAI(api_key=self.api_key)
+        else:
+            self.client = None
         self.tracker = tracker or FineTuningTracker()
 
     async def submit_job(
@@ -39,6 +44,9 @@ class FineTuningJobManager:
         base_model: str = "gpt-4o-mini-2024-07-18",
     ) -> str:
         """Upload training dataset file to OpenAI and submit fine-tuning job."""
+        if not self.client:
+            raise ValueError("OpenAI API key is not configured for fine-tuning")
+
         file_path = Path(jsonl_path)
         if not file_path.exists():
             raise FileNotFoundError(f"Training dataset file '{jsonl_path}' does not exist")
@@ -145,13 +153,14 @@ class FineTuningJobManager:
 
             # 2. Handle completion
             if status == "succeeded":
-                fine_tuned_model = getattr(job_info, "fine_tuned_model", None) or f"ft:{row['base_model']}:{job_uuid.hex[:8]}"
-                trained_tokens = getattr(job_info, "trained_tokens", None) or 10000
+                fine_tuned_model = getattr(job_info, "fine_tuned_model", None)
+                trained_tokens = getattr(job_info, "trained_tokens", None)
 
-                metrics_data = {
-                    "trained_tokens": trained_tokens,
-                    "fine_tuned_model": fine_tuned_model,
-                }
+                metrics_data = {}
+                if trained_tokens is not None:
+                    metrics_data["trained_tokens"] = trained_tokens
+                if fine_tuned_model:
+                    metrics_data["fine_tuned_model"] = fine_tuned_model
 
                 # Update database
                 await conn.execute(
@@ -164,7 +173,7 @@ class FineTuningJobManager:
                     WHERE id = $3
                     """,
                     fine_tuned_model,
-                    json.dumps(metrics_data),
+                    json.dumps(metrics_data) if metrics_data else None,
                     job_uuid,
                 )
 
@@ -179,15 +188,15 @@ class FineTuningJobManager:
                 )
 
                 # Register in Redis router
-                if redis_client:
+                if redis_client and fine_tuned_model:
                     await self.register_model_in_redis(redis_client, fine_tuned_model)
 
                 # Log completion metrics in MLflow
                 if row["mlflow_run_id"]:
                     await self.tracker.log_completion_metrics(
                         mlflow_run_id=row["mlflow_run_id"],
-                        training_loss=0.15,
-                        validation_loss=0.18,
+                        training_loss=getattr(job_info, "training_loss", None),
+                        validation_loss=getattr(job_info, "validation_loss", None),
                         training_token_count=trained_tokens,
                         model_name=fine_tuned_model,
                     )

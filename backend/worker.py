@@ -19,6 +19,7 @@ try:
     from backend.providers.anthropic_provider import AnthropicProvider
     from backend.providers.client import NeuroFlowClient, set_client
     from backend.providers.openai_provider import OpenAIProvider
+    from backend.providers.openrouter_provider import OpenRouterProvider
 except ImportError:
     from config import settings
     from db.documents import DocumentRepository
@@ -26,6 +27,7 @@ except ImportError:
     from providers.anthropic_provider import AnthropicProvider
     from providers.client import NeuroFlowClient, set_client
     from providers.openai_provider import OpenAIProvider
+    from providers.openrouter_provider import OpenRouterProvider
 
 from pipelines.ingestion.chunker import Chunker
 from pipelines.ingestion.dispatcher import IngestionDispatcher
@@ -51,7 +53,21 @@ EXTENSION_TO_SOURCE_TYPE = {
 }
 
 
-def _infer_source_type(source: str) -> str:
+MIME_TO_SOURCE_TYPE = {
+    "text/plain": "text",
+    "text/markdown": "text",
+    "text/csv": "csv",
+    "application/pdf": "pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/msword": "docx",
+}
+
+
+def _infer_source_type(source: str, source_type: str | None = None) -> str:
+    if source_type in {"pdf", "docx", "image", "csv", "url", "text"}:
+        return source_type
+    if source_type in MIME_TO_SOURCE_TYPE:
+        return MIME_TO_SOURCE_TYPE[source_type]
     parsed = urlparse(source)
     if parsed.scheme in {"http", "https"} and bool(parsed.netloc):
         return "url"
@@ -80,7 +96,7 @@ async def process_ingestion_job(
         raise ValueError("Ingestion job source cannot be empty")
 
     source = source.strip()
-    inferred_source_type = source_type or _infer_source_type(source)
+    inferred_source_type = _infer_source_type(source, source_type)
     inferred_filename = filename or _infer_filename(source)
     job_metadata = metadata or {}
     start_time = time.perf_counter()
@@ -190,6 +206,13 @@ async def startup(ctx: dict[str, Any]) -> None:
     )
 
     providers = {}
+    if settings.openrouter_api_key:
+        providers["openrouter"] = OpenRouterProvider(
+            api_key=settings.openrouter_api_key,
+            model=settings.openrouter_llm_model,
+            embedding_model=settings.openrouter_embedding_model,
+            base_url=settings.openrouter_base_url,
+        )
     if settings.openai_api_key:
         providers["openai"] = OpenAIProvider(api_key=settings.openai_api_key)
     if settings.anthropic_api_key:

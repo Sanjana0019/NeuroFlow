@@ -32,14 +32,21 @@ class NeuroFlowClient:
         routing_criteria: RoutingCriteria,
         **kwargs,
     ) -> GenerationResult:
-        """Route a chat request to the appropriate provider with circuit breaker, rate limiting, and timeout."""
+        if not self.providers:
+            raise RuntimeError(
+                "No LLM/Embedding provider configured. Please set OPENROUTER_API_KEY or OPENAI_API_KEY in .env."
+            )
 
         model_config = await self.router.route(routing_criteria)
 
         model_name = model_config["model"]
         provider_name = model_config["provider"]
 
-        provider = self.providers[provider_name]
+        provider = self.providers.get(provider_name)
+        if not provider:
+            raise RuntimeError(
+                f"Routed provider '{provider_name}' is not registered in NeuroFlowClient. Available: {list(self.providers.keys())}"
+            )
 
         # 1. Global LLM rate limiter
         limiter = get_global_llm_limiter(provider=provider_name, redis=self.redis)
@@ -83,10 +90,20 @@ class NeuroFlowClient:
         **kwargs,
     ) -> tuple[AsyncGenerator[str, None], str]:
         """Route a chat stream request to the appropriate provider."""
+        if not self.providers:
+            raise RuntimeError(
+                "No LLM/Embedding provider configured. Please set OPENROUTER_API_KEY or OPENAI_API_KEY in .env."
+            )
+
         model_config = await self.router.route(routing_criteria)
         model_name = model_config["model"]
         provider_name = model_config["provider"]
-        provider = self.providers[provider_name]
+
+        provider = self.providers.get(provider_name)
+        if not provider:
+            raise RuntimeError(
+                f"Routed provider '{provider_name}' is not registered in NeuroFlowClient. Available: {list(self.providers.keys())}"
+            )
 
         # Rate limiter
         limiter = get_global_llm_limiter(provider=provider_name, redis=self.redis)
@@ -96,15 +113,25 @@ class NeuroFlowClient:
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         """Generate embeddings using the registered embedding provider with timeout and circuit breaker."""
+        if not self.providers:
+            raise RuntimeError(
+                "No LLM/Embedding provider configured. Please set OPENROUTER_API_KEY or OPENAI_API_KEY in .env."
+            )
 
-        provider = self.providers["openai"]
+        provider_name = (
+            "openrouter"
+            if "openrouter" in self.providers
+            else ("openai" if "openai" in self.providers else next(iter(self.providers.keys())))
+        )
+        provider = self.providers[provider_name]
+        embedding_model_name = getattr(provider, "embedding_model", "text-embedding-3-small")
 
         start_time = time.perf_counter()
 
         with self.tracer.start_as_current_span(
             "llm.embed",
         ) as span:
-            async with circuit_breaker("openai", redis=self.redis):
+            async with circuit_breaker(provider_name, redis=self.redis):
                 embeddings = await self.timeout_manager.execute(
                     "embedding",
                     provider.embed(texts),
@@ -112,7 +139,7 @@ class NeuroFlowClient:
 
             latency_ms = (time.perf_counter() - start_time) * 1000
 
-            span.set_attribute("model", "text-embedding-3-small")
+            span.set_attribute("model", embedding_model_name)
             span.set_attribute("latency_ms", latency_ms)
 
         return embeddings

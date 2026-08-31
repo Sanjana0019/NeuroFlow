@@ -28,9 +28,11 @@ class OpenAIProvider(BaseLLMProvider):
         self,
         api_key: str,
         model: str = "gpt-4o-mini",
+        embedding_model: str = "text-embedding-3-small",
         base_url: str | None = None,
     ):
         self.model = model
+        self.embedding_model = embedding_model
 
         client_kwargs = {"api_key": api_key}
 
@@ -184,8 +186,9 @@ class OpenAIProvider(BaseLLMProvider):
             batch = texts[start:start + batch_size]
 
             response = await self.client.embeddings.create(
-                model="text-embedding-3-small",
+                model=self.embedding_model,
                 input=batch,
+                encoding_format="float",
             )
 
             ordered = sorted(

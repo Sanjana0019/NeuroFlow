@@ -103,11 +103,24 @@ class EvaluationJudge:
                 )
 
             redis_client = getattr(self.client, "redis", None) if self.client else None
-            f_score, r_score, p_score, rc_score = await execute_with_timeout(
-                "evaluation",
-                _gather_eval(),
-                redis=redis_client,
-            )
+            try:
+                f_score, r_score, p_score, rc_score = await execute_with_timeout(
+                    "evaluation",
+                    _gather_eval(),
+                    redis=redis_client,
+                )
+            except Exception as exc:
+                logger.warning(f"LLM Judge evaluation hit exception or timeout ({exc}). Using heuristic fallback.")
+                from evaluation.metrics.faithfulness import _evaluate_faithfulness_heuristic
+                from evaluation.metrics.answer_relevance import _evaluate_relevance_heuristic
+                from evaluation.metrics.context_precision import _evaluate_precision_heuristic
+                from evaluation.metrics.context_recall import _evaluate_recall_heuristic
+
+                clean_context = " ".join(chunks_list)
+                f_score = _evaluate_faithfulness_heuristic(answer, clean_context)
+                r_score = _evaluate_relevance_heuristic(query, answer)
+                p_score = _evaluate_precision_heuristic(query, chunks_list)
+                rc_score = _evaluate_recall_heuristic(query, answer, chunks_list)
 
             # 2. Composite Overall Score Calculation
             overall = (
@@ -203,5 +216,25 @@ class EvaluationJudge:
                             answer,
                             score.overall_score,
                         )
+
+            # Publish event to Redis pub/sub channel for real-time evaluation feed
+            try:
+                redis_client = getattr(self.client, "redis", None)
+                if redis_client is not None:
+                    event_payload = {
+                        "run_id": str(run_uuid),
+                        "query": query,
+                        "generation": answer,
+                        "faithfulness": score.faithfulness,
+                        "answer_relevance": score.answer_relevance,
+                        "context_precision": score.context_precision,
+                        "context_recall": score.context_recall,
+                        "overall_score": score.overall_score,
+                        "judge_model": score.judge_model,
+                    }
+                    await redis_client.publish("evaluations:new", json.dumps(event_payload))
+            except Exception as pub_exc:
+                logger.warning("Failed to publish evaluation to Redis evaluations:new: %s", pub_exc)
+
         except Exception as exc:
             logger.error("Failed to persist evaluation for run %s: %s", run_uuid, exc)

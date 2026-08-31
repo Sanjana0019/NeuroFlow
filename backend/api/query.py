@@ -51,6 +51,7 @@ class QueryResponse(BaseModel):
     output_tokens: int = 0
     model_used: str = "gpt-4o-mini"
     status: str = "complete"
+    stage_counts: dict[str, int] = {}
 
 
 def _get_retrieval_pipeline(
@@ -198,6 +199,7 @@ async def execute_query(
             output_tokens=output.output_tokens,
             model_used=output.model_used,
             status="complete",
+            stage_counts=getattr(assembled_context, "stage_counts", {}),
         )
 
     # 2. Streaming Setup: register active run and return run_id for SSE connection
@@ -263,6 +265,7 @@ async def stream_query_events(
                     "type": "retrieval_complete",
                     "chunk_count": len(chunks),
                     "sources": sources_list,
+                    "stage_counts": getattr(assembled_context, "stage_counts", {}),
                 }
             )
         }
@@ -277,6 +280,7 @@ async def stream_query_events(
             pipeline_id=pipeline_id,
             db_pool=db_pool,
             arq_redis=arq_redis,
+            run_id=UUID(run_id),
         )
 
         # Iterate generator with keepalive watchdog

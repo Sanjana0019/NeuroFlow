@@ -5,8 +5,13 @@ import logging
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
+
+try:
+    from backend.config import settings
+except ImportError:
+    from config import settings
 
 from pipelines.finetuning.extractor import TrainingDataExtractor
 from pipelines.finetuning.job_manager import FineTuningJobManager
@@ -44,6 +49,135 @@ class PreviewPairItem(BaseModel):
     messages: list[dict[str, str]]
 
 
+class TrainingPairDetailItem(BaseModel):
+    id: str
+    run_id: str
+    user_message: str
+    assistant_message: str
+    system_prompt: str
+    quality_score: float | None = None
+    faithfulness: float | None = None
+    answer_relevance: float | None = None
+    token_count: int
+    has_citation: bool
+    has_pii: bool
+    user_rating: int | None = None
+    is_valid: bool
+    rejection_reason: str | None = None
+    included_in_job: str | None = None
+    created_at: str | None = None
+
+
+class ValidationRuleItem(BaseModel):
+    name: str
+    requirement: str
+    passed: bool
+
+
+class DatasetReadinessResponse(BaseModel):
+    total_candidates: int
+    eligible_sft_count: int
+    min_required_for_finetuning: int
+    remaining_for_finetuning: int
+    can_export: bool
+    can_finetune: bool
+    openai_configured: bool
+    dpo_pair_count: int
+    validation_rules: list[ValidationRuleItem]
+    rejected_count: int
+    rejection_summary: dict[str, int]
+
+
+class DPOPreviewItem(BaseModel):
+    prompt: str
+    chosen: str
+    rejected: str
+
+
+@router.get("/readiness", response_model=DatasetReadinessResponse)
+async def get_dataset_readiness(request: Request):
+    """Retrieve canonical dataset readiness metrics, validation checklist, and eligibility counts."""
+    db_pool = getattr(request.app.state, "db_pool", None)
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database connection pool is not available")
+
+    extractor = TrainingDataExtractor()
+    openai_configured = bool(settings.openai_api_key and settings.openai_api_key.strip())
+    readiness = await extractor.get_dataset_readiness(
+        db_pool=db_pool,
+        openai_configured=openai_configured,
+    )
+    return readiness
+
+
+@router.get("/training-data", response_model=list[TrainingPairDetailItem])
+async def list_training_data(
+    request: Request,
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    """Retrieve all collected training pairs with real token counts, citations, and validation metadata."""
+    db_pool = getattr(request.app.state, "db_pool", None)
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database connection pool is not available")
+
+    extractor = TrainingDataExtractor()
+    pairs = await extractor.get_all_training_pairs(db_pool=db_pool, limit=limit)
+    return pairs
+
+
+@router.get("/training-data/preview", response_model=list[PreviewPairItem])
+async def preview_training_data(request: Request):
+    """Preview up to 5 currently eligible training pairs without creating or submitting a job."""
+    db_pool = getattr(request.app.state, "db_pool", None)
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database connection pool is not available")
+
+    extractor = TrainingDataExtractor()
+    pairs = await extractor.preview_eligible_pairs(db_pool=db_pool, limit=5)
+    return pairs
+
+
+@router.get("/dpo/preview", response_model=list[DPOPreviewItem])
+async def preview_dpo_data(request: Request):
+    """Preview up to 5 currently eligible DPO preference pairs."""
+    db_pool = getattr(request.app.state, "db_pool", None)
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database connection pool is not available")
+
+    extractor = TrainingDataExtractor()
+    pairs = await extractor.preview_dpo_pairs(db_pool=db_pool, limit=5)
+    return pairs
+
+
+@router.get("/datasets/export")
+async def export_dataset_endpoint(
+    request: Request,
+    dataset_type: str = Query(default="sft", pattern="^(sft|dpo)$"),
+    format: str = Query(default="jsonl", pattern="^(jsonl|json)$"),
+):
+    """Export and download validated SFT or DPO datasets in JSONL or JSON format."""
+    db_pool = getattr(request.app.state, "db_pool", None)
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database connection pool is not available")
+
+    extractor = TrainingDataExtractor()
+    content, media_type, count = await extractor.export_dataset(
+        db_pool=db_pool,
+        dataset_type=dataset_type,
+        export_format=format,
+    )
+
+    filename = f"neuroflow_{dataset_type}_dataset.{format}"
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Total-Records": str(count),
+        },
+    )
+
+
 @router.post("/jobs", response_model=JobResponse, status_code=201)
 async def create_finetune_job(
     body: CreateJobRequest,
@@ -53,6 +187,13 @@ async def create_finetune_job(
     db_pool = getattr(request.app.state, "db_pool", None)
     if not db_pool:
         raise HTTPException(status_code=500, detail="Database connection pool is not available")
+
+    # Validate provider configuration
+    if not settings.openai_api_key or not settings.openai_api_key.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="OpenAI API key is not configured for fine-tuning. Please configure OPENAI_API_KEY.",
+        )
 
     client = getattr(request.app.state, "neuroflow_client", None)
     arq_redis = getattr(request.app.state, "arq_redis", None)
@@ -232,34 +373,3 @@ async def get_finetune_job(job_id: UUID, request: Request):
         created_at=row["created_at"],
         completed_at=row["completed_at"],
     )
-
-
-class DPOPreviewItem(BaseModel):
-    prompt: str
-    chosen: str
-    rejected: str
-
-
-@router.get("/training-data/preview", response_model=list[PreviewPairItem])
-async def preview_training_data(request: Request):
-    """Preview up to 5 currently eligible training pairs without creating or submitting a job."""
-    db_pool = getattr(request.app.state, "db_pool", None)
-    if not db_pool:
-        raise HTTPException(status_code=500, detail="Database connection pool is not available")
-
-    extractor = TrainingDataExtractor()
-    pairs = await extractor.preview_eligible_pairs(db_pool=db_pool, limit=5)
-    return pairs
-
-
-@router.get("/dpo/preview", response_model=list[DPOPreviewItem])
-async def preview_dpo_data(request: Request):
-    """Preview up to 5 currently eligible DPO preference pairs."""
-    db_pool = getattr(request.app.state, "db_pool", None)
-    if not db_pool:
-        raise HTTPException(status_code=500, detail="Database connection pool is not available")
-
-    extractor = TrainingDataExtractor()
-    pairs = await extractor.preview_dpo_pairs(db_pool=db_pool, limit=5)
-    return pairs
-

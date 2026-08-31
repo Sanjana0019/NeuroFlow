@@ -8,7 +8,7 @@ from pipelines.ingestion.models import Chunk
 class ChunkEmbedder:
     """Generates embeddings for document chunks using the configured NeuroFlow provider client."""
 
-    EXPECTED_DIMENSION = 1536
+    EXPECTED_DIMENSION = 2048
 
     def __init__(
         self,

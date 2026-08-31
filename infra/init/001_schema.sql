@@ -21,7 +21,7 @@ CREATE TABLE chunks (
     document_id UUID NOT NULL
         REFERENCES documents(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
-    embedding vector(1536),
+    embedding halfvec(2048),
     chunk_index INT NOT NULL,
     token_count INT NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{}',
@@ -29,7 +29,7 @@ CREATE TABLE chunks (
 );
 
 CREATE INDEX chunks_embedding_hnsw_idx
-    ON chunks USING hnsw (embedding vector_cosine_ops)
+    ON chunks USING hnsw (embedding halfvec_cosine_ops)
     WITH (m = 16, ef_construction = 64);
 
 CREATE INDEX chunks_document_id_idx

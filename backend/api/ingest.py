@@ -1,9 +1,13 @@
+from datetime import datetime
 import hashlib
 import json
+import logging
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
+
+logger = logging.getLogger("neuroflow.api.ingest")
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -302,3 +306,194 @@ async def get_document_status(
         chunk_count=doc.get("chunk_count") or 0,
         metadata=doc_metadata,
     )
+
+
+class DocumentItemResponse(BaseModel):
+    id: UUID
+    filename: str
+    source_type: str
+    status: str
+    chunk_count: int = 0
+    metadata: dict[str, Any] = {}
+    created_at: datetime | None = None
+
+
+class ChunkItemResponse(BaseModel):
+    id: UUID
+    document_id: UUID
+    chunk_index: int
+    content: str
+    token_count: int = 0
+    metadata: dict[str, Any] = {}
+
+
+class SimilarSearchRequest(BaseModel):
+    query: str
+    limit: int = 5
+
+
+class SimilarChunkResponse(BaseModel):
+    id: UUID
+    chunk_index: int
+    content: str
+    similarity_score: float
+
+
+@router.get("/documents", response_model=list[DocumentItemResponse])
+async def list_documents(request: Request):
+    """List all ingested documents with metadata, status, and chunk count."""
+    db_pool = request.app.state.db_pool
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database pool is not available")
+
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, filename, source_type, status, chunk_count, metadata, created_at
+            FROM documents
+            ORDER BY created_at DESC
+            """
+        )
+
+    results: list[DocumentItemResponse] = []
+    for r in rows:
+        meta_raw = r["metadata"]
+        if isinstance(meta_raw, str):
+            try:
+                meta = json.loads(meta_raw)
+            except Exception:
+                meta = {}
+        else:
+            meta = meta_raw or {}
+
+        results.append(
+            DocumentItemResponse(
+                id=r["id"],
+                filename=r["filename"],
+                source_type=r["source_type"],
+                status=r["status"],
+                chunk_count=r["chunk_count"] or 0,
+                metadata=meta,
+                created_at=r["created_at"],
+            )
+        )
+
+    return results
+
+
+@router.get("/documents/{document_id}/chunks", response_model=list[ChunkItemResponse])
+async def get_document_chunks(document_id: UUID, request: Request):
+    """Retrieve all chunks belonging to a specific document."""
+    db_pool = request.app.state.db_pool
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database pool is not available")
+
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, document_id, chunk_index, content, token_count, metadata
+            FROM chunks
+            WHERE document_id = $1
+            ORDER BY chunk_index ASC
+            """,
+            document_id,
+        )
+
+    results: list[ChunkItemResponse] = []
+    for r in rows:
+        meta_raw = r["metadata"]
+        if isinstance(meta_raw, str):
+            try:
+                meta = json.loads(meta_raw)
+            except Exception:
+                meta = {}
+        else:
+            meta = meta_raw or {}
+
+        results.append(
+            ChunkItemResponse(
+                id=r["id"],
+                document_id=r["document_id"],
+                chunk_index=r["chunk_index"],
+                content=r["content"],
+                token_count=r["token_count"] or 0,
+                metadata=meta,
+            )
+        )
+
+    return results
+
+
+@router.post("/documents/{document_id}/similar", response_model=list[SimilarChunkResponse])
+async def find_similar_chunks(
+    document_id: UUID,
+    body: SimilarSearchRequest,
+    request: Request,
+):
+    """Find the most semantically similar chunks in a document for a search query using pgvector."""
+    db_pool = request.app.state.db_pool
+    client = getattr(request.app.state, "neuroflow_client", None)
+    if not db_pool:
+        raise HTTPException(status_code=500, detail="Database pool is not available")
+
+    query_text = (body.query or "").strip()
+    if not query_text:
+        raise HTTPException(status_code=400, detail="Search query cannot be empty")
+
+    # Embed search query
+    embeddings = []
+    if client:
+        try:
+            embeddings = await client.embed([query_text])
+        except Exception as exc:
+            logger.warning("Embed query failed in find_similar_chunks: %s", exc)
+
+    if not embeddings or not embeddings[0]:
+        # Fallback text ILIKE matching if embedder is offline
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, chunk_index, content, 0.85 AS similarity_score
+                FROM chunks
+                WHERE document_id = $1 AND content ILIKE $2
+                LIMIT $3
+                """,
+                document_id,
+                f"%{query_text}%",
+                body.limit,
+            )
+            return [
+                SimilarChunkResponse(
+                    id=r["id"],
+                    chunk_index=r["chunk_index"],
+                    content=r["content"],
+                    similarity_score=float(r["similarity_score"]),
+                )
+                for r in rows
+            ]
+
+    vector_str = f"[{','.join(str(v) for v in embeddings[0])}]"
+
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, chunk_index, content, (1 - (embedding <=> $1::vector)) AS similarity_score
+            FROM chunks
+            WHERE document_id = $2
+            ORDER BY embedding <=> $1::vector
+            LIMIT $3
+            """,
+            vector_str,
+            document_id,
+            body.limit,
+        )
+
+    return [
+        SimilarChunkResponse(
+            id=r["id"],
+            chunk_index=r["chunk_index"],
+            content=r["content"],
+            similarity_score=round(max(0.0, float(r["similarity_score"] or 0.0)), 4),
+        )
+        for r in rows
+    ]

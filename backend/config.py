@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
 
+    # OpenRouter configuration
+    openrouter_api_key: str | None = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_llm_model: str = "nvidia/nemotron-3-nano-30b-a3b:free"
+    openrouter_embedding_model: str = "nvidia/nemotron-3-embed-1b:free"
+
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
         extra="ignore",

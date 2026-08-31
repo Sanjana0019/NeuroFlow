@@ -39,3 +39,4 @@ class AssembledContext:
     chunks_used: list[RetrievalResult] = field(default_factory=list)
     total_tokens: int = 0
     sources: list[dict[str, Any]] = field(default_factory=list)
+    stage_counts: dict[str, int] = field(default_factory=dict)

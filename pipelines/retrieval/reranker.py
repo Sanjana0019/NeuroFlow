@@ -80,13 +80,17 @@ class Reranker:
             return await asyncio.gather(*tasks, return_exceptions=True)
 
         redis_client = getattr(self.client, "redis", None) if self.client else None
-        scores = await execute_with_timeout("reranking", _gather_scores(), redis=redis_client)
+        try:
+            scores = await execute_with_timeout("reranking", _gather_scores(), redis=redis_client)
+        except Exception as exc:
+            logger.warning("Reranking gather failed or timed out (%s). Using candidate score fallback.", exc)
+            scores = [self._heuristic_overlap_score(query, c.content) for c in selected_candidates]
 
         scored_candidates: list[tuple[float, RetrievalResult]] = []
         for idx, candidate in enumerate(selected_candidates):
-            score = scores[idx]
+            score = scores[idx] if idx < len(scores) else None
             if isinstance(score, Exception) or score is None:
-                final_score = candidate.score * 10.0
+                final_score = self._heuristic_overlap_score(query, candidate.content)
             else:
                 final_score = float(score)
 

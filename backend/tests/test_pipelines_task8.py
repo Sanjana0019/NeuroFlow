@@ -133,6 +133,114 @@ def test_pipeline_config_invalid_constraints():
         PipelineConfig.model_validate(raw)
 
 
+def test_ui_preset_configs_valid():
+    """Verify that all 3 UI presets (Balanced Hybrid, Fast Dense, Deep Research) strictly validate."""
+    balanced_hybrid = {
+        "name": "enterprise-hybrid-rag",
+        "description": "Production enterprise retrieval-augmented generation pipeline with hybrid search.",
+        "ingestion": {
+            "chunking_strategy": "recursive",
+            "chunk_size_tokens": 512,
+            "chunk_overlap_tokens": 64,
+            "extractors_enabled": ["pdf", "docx", "text"],
+        },
+        "retrieval": {
+            "dense_k": 20,
+            "sparse_k": 15,
+            "reranker": "bge-reranker-large",
+            "top_k_after_rerank": 5,
+            "query_expansion": True,
+            "metadata_filters_enabled": True,
+        },
+        "generation": {
+            "model_routing": {
+                "task_type": "rag_generation",
+                "max_cost_per_call": 0.05,
+            },
+            "max_context_tokens": 4000,
+            "temperature": 0.7,
+            "system_prompt_variant": "enterprise_qa",
+        },
+        "evaluation": {
+            "auto_evaluate": True,
+            "training_threshold": 0.85,
+        },
+    }
+    cfg1 = PipelineConfig.model_validate(balanced_hybrid)
+    assert cfg1.name == "enterprise-hybrid-rag"
+    assert cfg1.retrieval.reranker == "bge-reranker-large"
+
+    fast_dense = {
+        "name": "fast-dense-search",
+        "description": "High-speed dense vector search pipeline for rapid question-answering.",
+        "ingestion": {
+            "chunking_strategy": "recursive",
+            "chunk_size_tokens": 512,
+            "chunk_overlap_tokens": 32,
+            "extractors_enabled": ["pdf", "docx", "text"],
+        },
+        "retrieval": {
+            "dense_k": 10,
+            "sparse_k": 5,
+            "reranker": "none",
+            "top_k_after_rerank": 5,
+            "query_expansion": False,
+            "metadata_filters_enabled": False,
+        },
+        "generation": {
+            "model_routing": {
+                "task_type": "rag_generation",
+                "max_cost_per_call": 0.02,
+            },
+            "max_context_tokens": 2048,
+            "temperature": 0.3,
+            "system_prompt_variant": "concise",
+        },
+        "evaluation": {
+            "auto_evaluate": True,
+            "training_threshold": 0.80,
+        },
+    }
+    cfg2 = PipelineConfig.model_validate(fast_dense)
+    assert cfg2.name == "fast-dense-search"
+    assert cfg2.retrieval.sparse_k == 5
+
+    deep_research = {
+        "name": "deep-research-rag",
+        "description": "Comprehensive research pipeline with expanded context window and deep cross-encoder reranking.",
+        "ingestion": {
+            "chunking_strategy": "recursive",
+            "chunk_size_tokens": 1024,
+            "chunk_overlap_tokens": 128,
+            "extractors_enabled": ["pdf", "docx", "text", "csv", "pptx"],
+        },
+        "retrieval": {
+            "dense_k": 30,
+            "sparse_k": 25,
+            "reranker": "bge-reranker-large",
+            "top_k_after_rerank": 10,
+            "query_expansion": True,
+            "metadata_filters_enabled": True,
+        },
+        "generation": {
+            "model_routing": {
+                "task_type": "rag_generation",
+                "max_cost_per_call": 0.10,
+            },
+            "max_context_tokens": 8000,
+            "temperature": 0.5,
+            "system_prompt_variant": "comprehensive_research",
+        },
+        "evaluation": {
+            "auto_evaluate": True,
+            "training_threshold": 0.90,
+        },
+    }
+    cfg3 = PipelineConfig.model_validate(deep_research)
+    assert cfg3.name == "deep-research-rag"
+    assert cfg3.generation.max_context_tokens == 8000
+
+
 # ============================================================================
 # Mock Infrastructure for API Testing
 # ============================================================================
@@ -197,7 +305,7 @@ class MockTask8DBConn:
                 return self.pipelines[p_uuid]
             return None
 
-        if "SELECT id, version, status, config FROM pipelines WHERE id =" in normalized or "SELECT id, version, config FROM pipelines WHERE id =" in normalized:
+        if "FROM pipelines WHERE id =" in normalized:
             if p_uuid and p_uuid in self.pipelines:
                 return self.pipelines[p_uuid]
             return None
@@ -220,6 +328,24 @@ class MockTask8DBConn:
                 self.pipelines[p_uuid]["updated_at"] = datetime.now(timezone.utc)
                 return {"id": p_uuid, "status": "archived"}
             return None
+
+        if "COUNT(CASE WHEN r.created_at >= $2 THEN 1 END) AS count_7d" in normalized:
+            runs = [r for r in self.pipeline_runs if r["pipeline_id"] == p_uuid]
+            evals = [e for e in self.evaluations if e.get("pipeline_id") == p_uuid or any(r["id"] == e.get("run_id") for r in runs)]
+            
+            avg_faith = sum(e["faithfulness"] for e in evals if e.get("faithfulness") is not None) / len(evals) if evals else (0.92 if runs else None)
+            avg_quality = sum(e["overall_score"] for e in evals if e.get("overall_score") is not None) / len(evals) if evals else (0.89 if runs else None)
+            
+            return {
+                "count_7d": len(runs),
+                "count_prev_7d": 0,
+                "quality_7d": avg_quality,
+                "quality_all_time": avg_quality,
+                "faith_7d": avg_faith,
+                "faith_all_time": avg_faith,
+                "faith_prev_7d": None,
+                "total_runs": len(runs),
+            }
 
         if "COUNT(r.id) AS total_runs" in normalized:
             runs = [r for r in self.pipeline_runs if r["pipeline_id"] == p_uuid]
@@ -249,6 +375,14 @@ class MockTask8DBConn:
             except Exception:
                 pass
 
+        if "percentile_cont(0.5) WITHIN GROUP" in query:
+            runs = [r for r in self.pipeline_runs if r["pipeline_id"] == p_uuid]
+            if not runs:
+                return None
+            lats = sorted([r.get("latency_ms", 120.0) for r in runs])
+            mid = len(lats) // 2
+            return float(lats[mid])
+
         if "SELECT COUNT(*) FROM pipeline_runs WHERE pipeline_id =" in query:
             return sum(1 for r in self.pipeline_runs if r["pipeline_id"] == p_uuid)
 
@@ -274,6 +408,20 @@ class MockTask8DBConn:
         return None
 
     async def fetch(self, query: str, *args):
+        p_uuid = None
+        if args:
+            try:
+                p_uuid = UUID(str(args[0]))
+            except Exception:
+                pass
+
+        if "SELECT DATE(created_at AT TIME ZONE 'UTC') AS day" in query:
+            runs = [r for r in self.pipeline_runs if r["pipeline_id"] == p_uuid]
+            now_day = datetime.now(timezone.utc).date()
+            if runs:
+                return [{"day": now_day, "count": len(runs)}]
+            return []
+
         if "FROM pipelines p" in query:
             include_archived = "WHERE p.status != 'archived'" not in query
             rows = []
@@ -349,6 +497,18 @@ class MockTask8DBConn:
                     "overall_score": 0.91,
                 })
             return rows
+
+        if "status = 'failed'" in query:
+            failed_runs = [r for r in self.pipeline_runs if r["pipeline_id"] == p_uuid and r.get("status") == "failed"]
+            return [
+                {
+                    "run_id": r["id"],
+                    "query": r["query"],
+                    "timestamp": r["created_at"],
+                    "error_message": r.get("generation") or "Execution failed",
+                }
+                for r in failed_runs[:5]
+            ]
 
         if "SELECT DATE(created_at) AS run_date" in query:
             today = datetime.now(timezone.utc).date()
@@ -703,7 +863,160 @@ def test_pipeline_analytics_endpoint(task8_client_and_db):
     assert "retrieval_latency_p50" in data
     assert "retrieval_latency_p95" in data
     assert "retrieval_latency_p99" in data
+    assert data["total_runs"] == 4
     assert data["avg_generation_latency_ms"] == 125.0
+    assert data["avg_latency_ms"] == 125.0
     assert data["cost_per_query"] > 0
     assert data["avg_evaluation_scores"]["faithfulness"] == 0.95
     assert len(data["queries_per_day"]) >= 1
+
+
+def test_pipeline_analytics_empty_pipeline(task8_client_and_db):
+    """Test analytics for a pipeline with zero runs returns zeros and nulls cleanly."""
+    client, db, _ = task8_client_and_db
+
+    cfg = get_valid_pipeline_config_dict("empty_analytics_pipeline")
+    p_res = client.post("/pipelines", json=cfg)
+    p_id = p_res.json()["id"]
+
+    analytics_res = client.get(f"/pipelines/{p_id}/analytics")
+    assert analytics_res.status_code == 200
+    data = analytics_res.json()
+
+    assert data["total_runs"] == 0
+    assert data["retrieval_latency_p50"] == 0.0
+    assert data["latency_p50_ms"] == 0.0
+    assert data["avg_latency_ms"] == 0.0
+    assert data["cost_per_query"] == 0.0
+    assert data["total_cost_usd"] == 0.0
+    assert data["avg_evaluation_scores"]["faithfulness"] is None
+    assert data["avg_evaluation_scores"]["overall_score"] is None
+    assert data["queries_per_day"] == []
+    assert data["recent_failures"] == []
+
+
+def test_pipeline_analytics_with_failures(task8_client_and_db):
+    """Test analytics returns recent failures list correctly."""
+    client, db, _ = task8_client_and_db
+
+    cfg = get_valid_pipeline_config_dict("failure_analytics_pipeline")
+    p_res = client.post("/pipelines", json=cfg)
+    p_id = p_res.json()["id"]
+
+    db.pipeline_runs.append({
+        "id": uuid4(),
+        "pipeline_id": UUID(p_id),
+        "pipeline_version": 1,
+        "query": "What is the capital of Mars?",
+        "latency_ms": 50,
+        "input_tokens": 10,
+        "output_tokens": 0,
+        "model_used": "gpt-4o-mini",
+        "status": "failed",
+        "generation": "Rate limit exceeded on provider API",
+        "created_at": datetime.now(timezone.utc),
+    })
+
+    analytics_res = client.get(f"/pipelines/{p_id}/analytics")
+    assert analytics_res.status_code == 200
+    data = analytics_res.json()
+
+    assert data["total_runs"] == 1
+    assert len(data["recent_failures"]) == 1
+    assert data["recent_failures"][0]["query"] == "What is the capital of Mars?"
+    assert "Rate limit exceeded" in data["recent_failures"][0]["error_message"]
+
+
+def test_pipeline_summary_metrics_isolation(task8_client_and_db):
+    """Test that pipeline summary metrics are strictly isolated and reflect genuine database records."""
+    client, db, _ = task8_client_and_db
+
+    # Pipeline A: 7 runs
+    pA_res = client.post("/pipelines", json=get_valid_pipeline_config_dict("Pipeline_Alpha"))
+    pA_id = UUID(pA_res.json()["id"])
+    for i in range(7):
+        r_id = uuid4()
+        db.pipeline_runs.append({
+            "id": r_id,
+            "pipeline_id": pA_id,
+            "pipeline_version": 1,
+            "query": f"Alpha query {i}",
+            "latency_ms": 100 + i * 10,
+            "input_tokens": 50,
+            "output_tokens": 20,
+            "model_used": "gpt-4o-mini",
+            "status": "complete",
+            "generation": "Alpha response",
+            "created_at": datetime.now(timezone.utc),
+        })
+        db.evaluations.append({
+            "id": uuid4(),
+            "run_id": r_id,
+            "pipeline_id": pA_id,
+            "faithfulness": 0.95,
+            "answer_relevance": 0.90,
+            "context_precision": 0.88,
+            "context_recall": 0.92,
+            "overall_score": 0.93,
+        })
+
+    # Pipeline B: 3 runs
+    pB_res = client.post("/pipelines", json=get_valid_pipeline_config_dict("Pipeline_Beta"))
+    pB_id = UUID(pB_res.json()["id"])
+    for i in range(3):
+        r_id = uuid4()
+        db.pipeline_runs.append({
+            "id": r_id,
+            "pipeline_id": pB_id,
+            "pipeline_version": 1,
+            "query": f"Beta query {i}",
+            "latency_ms": 200 + i * 20,
+            "input_tokens": 80,
+            "output_tokens": 40,
+            "model_used": "gpt-4o-mini",
+            "status": "complete",
+            "generation": "Beta response",
+            "created_at": datetime.now(timezone.utc),
+        })
+
+    # Pipeline C: 0 runs
+    pC_res = client.post("/pipelines", json=get_valid_pipeline_config_dict("Pipeline_Zero"))
+    pC_id = UUID(pC_res.json()["id"])
+
+    # Fetch all pipelines
+    list_res = client.get("/pipelines")
+    assert list_res.status_code == 200
+    pipelines = {p["id"]: p for p in list_res.json()}
+
+    # Verify Pipeline Alpha (A)
+    summary_A = pipelines[str(pA_id)]["metrics_summary"]
+    assert summary_A is not None
+    assert summary_A["has_data"] is True
+    assert summary_A["queries_7d"] == 7
+    assert summary_A["quality_score"] == 0.93
+    assert summary_A["faithfulness"] == 0.95
+    assert summary_A["latency_p50_ms"] == 130.0
+    assert len(summary_A["trend_7d"]) == 7
+
+    # Verify Pipeline Beta (B)
+    summary_B = pipelines[str(pB_id)]["metrics_summary"]
+    assert summary_B is not None
+    assert summary_B["has_data"] is True
+    assert summary_B["queries_7d"] == 3
+    assert summary_B["latency_p50_ms"] == 220.0
+
+    # Verify Pipeline Zero (C) - Zero runs empty state
+    summary_C = pipelines[str(pC_id)]["metrics_summary"]
+    assert summary_C is not None
+    assert summary_C["has_data"] is False
+    assert summary_C["queries_7d"] == 0
+    assert summary_C["quality_score"] is None
+    assert summary_C["faithfulness"] is None
+    assert summary_C["latency_p50_ms"] is None
+    assert all(point["query_count"] == 0 for point in summary_C["trend_7d"])
+
+    # Verify isolation: Alpha != Beta != Zero
+    assert summary_A["queries_7d"] != summary_B["queries_7d"]
+    assert summary_B["queries_7d"] != summary_C["queries_7d"]
+    assert summary_A["latency_p50_ms"] != summary_B["latency_p50_ms"]
+

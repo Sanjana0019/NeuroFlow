@@ -215,17 +215,9 @@ class MockTask9DBConn:
             return rows
 
         if "FROM training_pairs tp" in normalized:
-            min_q = args[0] if args else 0.82
             rows = []
             for tp in self.training_pairs:
-                if tp.get("included_in_job") is not None:
-                    continue
-                if tp.get("quality_score", 0.0) < min_q:
-                    continue
                 u_rating = tp.get("user_rating")
-                if u_rating is not None and u_rating < 4:
-                    continue
-
                 rows.append({
                     "id": tp["id"],
                     "run_id": tp["run_id"],
@@ -234,7 +226,11 @@ class MockTask9DBConn:
                     "assistant_message": tp["assistant_message"],
                     "quality_score": tp.get("quality_score", 0.9),
                     "faithfulness": tp.get("faithfulness", 0.95),
+                    "answer_relevance": tp.get("answer_relevance", 0.90),
+                    "context_precision": tp.get("context_precision", 0.85),
+                    "context_recall": tp.get("context_recall", 0.88),
                     "user_rating": u_rating,
+                    "included_in_job": tp.get("included_in_job"),
                     "created_at": tp.get("created_at", datetime.now(timezone.utc)),
                     "query": tp["user_message"],
                     "generation": tp["assistant_message"],
@@ -481,9 +477,10 @@ def test_create_finetune_job_insufficient_pairs(task9_client_and_db):
     client, db_conn = task9_client_and_db
     seed_training_pairs(db_conn, count=4)  # Only 4 pairs
 
-    res = client.post("/finetune/jobs", json={"base_model": "gpt-4o-mini-2024-07-18"})
-    assert res.status_code == 400
-    assert "Insufficient training pairs" in res.json()["detail"]
+    with patch("backend.api.finetune.settings.openai_api_key", "test-openai-key"):
+        res = client.post("/finetune/jobs", json={"base_model": "gpt-4o-mini-2024-07-18"})
+        assert res.status_code == 400
+        assert "Insufficient training pairs" in res.json()["detail"]
 
 
 def test_create_and_get_finetune_job_lifecycle(task9_client_and_db):
@@ -491,7 +488,8 @@ def test_create_and_get_finetune_job_lifecycle(task9_client_and_db):
     client, db_conn = task9_client_and_db
     seed_training_pairs(db_conn, count=15)  # 15 pairs (>= 10 required)
 
-    with patch("pipelines.finetuning.tracker.FineTuningTracker.create_job_run", new_callable=AsyncMock) as mock_tracker, \
+    with patch("backend.api.finetune.settings.openai_api_key", "test-openai-key"), \
+         patch("pipelines.finetuning.tracker.FineTuningTracker.create_job_run", new_callable=AsyncMock) as mock_tracker, \
          patch("pipelines.finetuning.job_manager.FineTuningJobManager.submit_job", new_callable=AsyncMock) as mock_submit:
 
         mock_tracker.return_value = "mlflow-run-abc"
@@ -657,4 +655,116 @@ def test_preview_dpo_data_endpoint(task9_client_and_db):
     assert "prompt" in data[0]
     assert "chosen" in data[0]
     assert "rejected" in data[0]
+
+
+def test_create_job_requires_openai_key(task9_client_and_db):
+    """POST /finetune/jobs rejects with 400 when OPENAI_API_KEY is not configured."""
+    client, db_conn = task9_client_and_db
+    seed_training_pairs(db_conn, count=15)
+
+    with patch("backend.api.finetune.settings.openai_api_key", None):
+        res = client.post("/finetune/jobs", json={"base_model": "gpt-4o-mini-2024-07-18"})
+        assert res.status_code == 400
+        assert "OpenAI API key is not configured" in res.json()["detail"]
+
+
+def test_dataset_readiness_endpoint(task9_client_and_db):
+    """GET /finetune/readiness returns canonical readiness breakdown and validation rules."""
+    client, db_conn = task9_client_and_db
+    seed_training_pairs(db_conn, count=3)
+
+    res = client.get("/finetune/readiness")
+    assert res.status_code == 200
+    data = res.json()
+
+    assert data["total_candidates"] == 3
+    assert data["eligible_sft_count"] == 3
+    assert data["min_required_for_finetuning"] == 10
+    assert data["remaining_for_finetuning"] == 7
+    assert data["can_export"] is True
+    assert len(data["validation_rules"]) >= 4
+
+
+def test_training_data_list_endpoint(task9_client_and_db):
+    """GET /finetune/training-data returns all training pairs with validation and token details."""
+    client, db_conn = task9_client_and_db
+    seed_training_pairs(db_conn, count=4)
+
+    res = client.get("/finetune/training-data")
+    assert res.status_code == 200
+    data = res.json()
+
+    assert len(data) == 4
+    first = data[0]
+    assert "id" in first
+    assert "user_message" in first
+    assert "assistant_message" in first
+    assert "token_count" in first
+    assert first["token_count"] >= 50
+    assert first["has_citation"] is True
+    assert first["is_valid"] is True
+
+
+def test_export_dataset_sft_jsonl_endpoint(task9_client_and_db):
+    """GET /finetune/datasets/export?dataset_type=sft&format=jsonl returns valid JSONL format."""
+    client, db_conn = task9_client_and_db
+    seed_training_pairs(db_conn, count=5)
+
+    res = client.get("/finetune/datasets/export?dataset_type=sft&format=jsonl")
+    assert res.status_code == 200
+    assert "application/x-jsonlines" in res.headers["content-type"]
+    assert "attachment" in res.headers["content-disposition"]
+    assert res.headers["X-Total-Records"] == "5"
+
+    lines = res.text.strip().split("\n")
+    assert len(lines) == 5
+    for line in lines:
+        obj = json.loads(line)
+        assert "messages" in obj
+        assert len(obj["messages"]) == 3
+        assert obj["messages"][0]["role"] == "system"
+        assert obj["messages"][1]["role"] == "user"
+        assert obj["messages"][2]["role"] == "assistant"
+
+
+def test_export_dataset_sft_json_endpoint(task9_client_and_db):
+    """GET /finetune/datasets/export?dataset_type=sft&format=json returns valid JSON array."""
+    client, db_conn = task9_client_and_db
+    seed_training_pairs(db_conn, count=3)
+
+    res = client.get("/finetune/datasets/export?dataset_type=sft&format=json")
+    assert res.status_code == 200
+    assert "application/json" in res.headers["content-type"]
+    data = res.json()
+    assert isinstance(data, list)
+    assert len(data) == 3
+    assert "messages" in data[0]
+
+
+def test_export_dataset_dpo_jsonl_endpoint(task9_client_and_db):
+    """GET /finetune/datasets/export?dataset_type=dpo&format=jsonl returns valid DPO JSONL format."""
+    client, db_conn = task9_client_and_db
+
+    db_conn.pipeline_runs.append({
+        "id": uuid4(),
+        "query": "What is the return policy?",
+        "generation": "Returns accepted within 30 days per policy.",
+        "user_rating": 5,
+    })
+    db_conn.pipeline_runs.append({
+        "id": uuid4(),
+        "query": "What is the return policy?",
+        "generation": "Check elsewhere.",
+        "user_rating": 1,
+    })
+
+    res = client.get("/finetune/datasets/export?dataset_type=dpo&format=jsonl")
+    assert res.status_code == 200
+    lines = res.text.strip().split("\n")
+    assert len(lines) == 1
+    dpo_obj = json.loads(lines[0])
+    assert dpo_obj["prompt"] == "What is the return policy?"
+    assert "within 30 days" in dpo_obj["chosen"]
+    assert "Check elsewhere" in dpo_obj["rejected"]
+
 
