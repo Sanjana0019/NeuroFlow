@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # OpenRouter configuration
     openrouter_api_key: str | None = None
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_llm_model: str = "nvidia/nemotron-3-nano-30b-a3b:free"
+    openrouter_llm_model: str = "inclusionai/ling-3.0-flash-fin:free"
     openrouter_embedding_model: str = "nvidia/nemotron-3-embed-1b:free"
 
     model_config = SettingsConfigDict(
