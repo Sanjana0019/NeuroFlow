@@ -26,7 +26,12 @@ class Retriever:
         if not query_text.strip():
             return []
 
-        embeddings = await self.embedder.embed([query_text])
+        try:
+            embeddings = await self.embedder.embed([query_text])
+        except Exception as exc:
+            logger.warning("Dense embedding generation failed (%s). Continuing with sparse retrieval.", exc)
+            return []
+
         if not embeddings or not embeddings[0]:
             return []
 
@@ -105,7 +110,7 @@ class Retriever:
         query: str,
         k: int = 20,
     ) -> list[RetrievalResult]:
-        """Sparse lexical retrieval using PostgreSQL Full-Text Search and ts_rank_cd."""
+        """Sparse lexical retrieval using PostgreSQL Full-Text Search with fallback ranking."""
         if not query.strip():
             return []
 
@@ -114,16 +119,32 @@ class Retriever:
                 """
                 SELECT c.id, c.document_id, c.content, c.chunk_index, c.token_count, c.metadata,
                        d.filename,
-                       ts_rank_cd(to_tsvector('english', c.content), plainto_tsquery('english', $1)) AS score
+                       ts_rank_cd(to_tsvector('english', c.content), websearch_to_tsquery('english', $1)) AS score
                 FROM chunks c
                 JOIN documents d ON c.document_id = d.id
-                WHERE to_tsvector('english', c.content) @@ plainto_tsquery('english', $1)
+                WHERE to_tsvector('english', c.content) @@ websearch_to_tsquery('english', $1)
+                   OR to_tsvector('english', c.content) @@ plainto_tsquery('english', $1)
                 ORDER BY score DESC
                 LIMIT $2
                 """,
                 query,
                 k,
             )
+
+            if not rows:
+                rows = await conn.fetch(
+                    """
+                    SELECT c.id, c.document_id, c.content, c.chunk_index, c.token_count, c.metadata,
+                           d.filename,
+                           ts_rank_cd(to_tsvector('english', c.content), plainto_tsquery('english', $1)) AS score
+                    FROM chunks c
+                    JOIN documents d ON c.document_id = d.id
+                    ORDER BY score DESC, c.chunk_index ASC
+                    LIMIT $2
+                    """,
+                    query,
+                    k,
+                )
 
         results = []
         for rank, r in enumerate(rows, start=1):

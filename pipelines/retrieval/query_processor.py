@@ -55,7 +55,10 @@ class QueryProcessor:
 
         try:
             criteria = RoutingCriteria(task_type="query_processing")
-            result = await self.client.chat(messages=messages, routing_criteria=criteria)
+            result = await asyncio.wait_for(
+                self.client.chat(messages=messages, routing_criteria=criteria),
+                timeout=2.0,
+            )
             raw_text = result.content.strip()
 
             # Clean markdown codeblocks if present
