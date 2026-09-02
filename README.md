@@ -11,7 +11,7 @@
 
 **Turn experimental retrieval into observable, measurable, and continuously improvable intelligence.**
 
-[Overview](#overview) • [Screenshots](#visual-walkthrough) • [Key Capabilities](#key-capabilities) • [Architecture](#architecture) • [Engineering Decisions](#ai-vs-deterministic-engineering) • [Production Failures](#what-broke-at-200-am) • [Quickstart](#quickstart) • [Builder](#builder)
+[Overview](#overview) • [Visual Walkthrough](#visual-walkthrough) • [Key Capabilities](#key-capabilities) • [Architecture](#architecture) • [Engineering Decisions](#ai-vs-deterministic-engineering) • [Production Failures](#what-broke-at-200-am) • [Quickstart](#quickstart) • [Builder](#builder)
 
 </div>
 
@@ -36,14 +36,14 @@ Most Retrieval-Augmented Generation (RAG) implementations stop at connecting a d
 ### 1. Multi-Stage Hybrid Retrieval Inspector
 *Inspect under-the-hood retrieval mechanics across Dense embeddings, BM25 keyword matching, Reciprocal Rank Fusion, and Cross-Encoder reranking before generation.*
 
-![Retrieval Inspector](docs/screenshots/01_retrieval_inspector.png)
+![Retrieval Inspector](docs/screenshots/01.Retrieval_Inspector.png)
 
 ---
 
 ### 2. Empirical A/B Pipeline Comparison & Answer Diff
 *Compare two pipeline configurations side-by-side on identical queries to evaluate latency differences, chunk ranking divergences, and token-level output diffs.*
 
-![A/B Compare Mode](docs/screenshots/02_ab_compare_mode.png)
+![A/B Compare Mode](docs/screenshots/02.Compare_mode.png)
 
 ---
 
@@ -51,6 +51,13 @@ Most Retrieval-Augmented Generation (RAG) implementations stop at connecting a d
 *Token-by-token streaming over Server-Sent Events with clickable citation chips `[Source X]` mapping to raw document passages, page numbers, and similarity scores.*
 
 ![Streaming & Citation Drawer](docs/screenshots/03_streaming_citation_drawer.png)
+
+---
+
+### 4. Closed-Loop Fine-Tuning Dataset Curation
+*Automated quality and safety validation gates (PII filtering, citation checks, token bounds) curating high-scoring production interactions into SFT and DPO training datasets.*
+
+![Fine-Tuning & Dataset Curation](docs/screenshots/03.Fine_tuning.png)
 
 ---
 
