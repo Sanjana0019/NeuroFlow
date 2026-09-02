@@ -9,9 +9,9 @@
 ![Redis](https://img.shields.io/badge/Redis-7%20Pub%2FSub-dc382d?style=for-the-badge&logo=redis&logoColor=white)
 ![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-Observability-f5a800?style=for-the-badge&logo=opentelemetry&logoColor=white)
 
-**Turn experimental retrieval into observable, measurable, and self-improving intelligence.**
+**Turn experimental retrieval into observable, measurable, and continuously improvable intelligence.**
 
-[Overview](#overview) • [Key Features](#key-features) • [Architecture](#architecture) • [Tech Stack](#tech-stack) • [Quickstart](#quickstart) • [API Reference](#api-reference) • [Builder](#builder)
+[Overview](#overview) • [Screenshots](#visual-walkthrough) • [Key Capabilities](#key-capabilities) • [Architecture](#architecture) • [Engineering Decisions](#ai-vs-deterministic-engineering) • [Production Failures](#what-broke-at-200-am) • [Quickstart](#quickstart) • [Builder](#builder)
 
 </div>
 
@@ -19,52 +19,66 @@
 
 ## Overview
 
-Most Retrieval-Augmented Generation (RAG) implementations stop at connecting a document parser to a vector database. In production, teams face a black box: when answers degrade or hallucinate, there is zero visibility into whether chunking, vector embeddings, BM25 keyword rankings, rerankers, or prompt templates caused the failure.
+Most Retrieval-Augmented Generation (RAG) implementations stop at connecting a document parser to a vector database. In production, engineering teams face a black box: when answers degrade, hallucinate, or miss exact business identifiers (SKUs, API error codes, legal clauses), there is zero visibility into whether chunking, vector embeddings, lexical keyword rankings, rerankers, or prompt templates caused the failure.
 
 **NeuroFlow** bridges the gap between simple prompt scripts and production AI infrastructure. It provides a complete, observable RAG lifecycle platform:
-1. **Multi-Source Ingestion**: High-throughput parsing across PDF, DOCX, CSV, PPTX, OCR images, and web URLs.
-2. **Hybrid Retrieval & Reranking**: Reciprocal Rank Fusion of dense semantic search (`pgvector`) and sparse keyword frequency (`BM25`), followed by cross-encoder reranking.
-3. **Real-Time Streaming with Citations**: Token-by-token Server-Sent Events (SSE) with deterministic chunk-level citation attribution and source inspection.
+1. **Multi-Format Ingestion**: High-throughput parsing across PDF, DOCX, CSV, PPTX, OCR images, and web URLs.
+2. **Hybrid Retrieval & Reranking**: Reciprocal Rank Fusion (RRF) of PostgreSQL `pgvector` dense semantic search and BM25 sparse keyword indices, followed by cross-encoder reranking.
+3. **Real-Time Streaming with Citations**: Token-by-token Server-Sent Events (SSE) with deterministic chunk-level citation attribution and interactive source inspection.
 4. **Automated LLM-as-Judge Evaluation**: Asynchronous background evaluation scoring Faithfulness, Answer Relevance, Context Precision, and Context Recall over Redis pub/sub.
-5. **A/B Pipeline Benchmarking**: Side-by-side comparison across pipeline versions with live latency and score diffs.
-6. **Closed-Loop Fine-Tuning Curation**: Automated extraction and validation (PII, length, citations) of top-scoring pairs for SFT and DPO JSONL export.
+5. **Empirical A/B Pipeline Benchmarking**: Side-by-side comparison across pipeline versions with live latency, chunk rank diffs, and token-level answer diffing.
+6. **Closed-Loop Fine-Tuning Curation**: Automated extraction and validation (PII, token length, citation verification) of top-scoring interactions for SFT and DPO JSONL export.
 
 ---
 
-## Key Features
+## Visual Walkthrough
 
-### 1. Multi-Format Ingestion Engine
-* Extract and normalize documents across **PDF**, **DOCX**, **CSV**, **PPTX**, **OCR image scans** (Tesseract), and **Web URLs**.
-* Configurable chunking strategies (recursive character splitting, semantic boundary detection) with configurable token overlap.
-* Dual indexing: stores high-dimensional dense embeddings (`text-embedding-3-small` / open-source equivalents) alongside BM25 sparse keyword indices.
+### 1. Multi-Stage Hybrid Retrieval Inspector
+*Inspect under-the-hood retrieval mechanics across Dense embeddings, BM25 keyword matching, Reciprocal Rank Fusion, and Cross-Encoder reranking before generation.*
 
-### 2. Hybrid Retrieval & Cross-Encoder Reranking
-* Dense vector similarity via **PostgreSQL `pgvector`** for semantic conceptual matching.
-* Sparse keyword frequency via **BM25** for exact terminology, acronyms, and product IDs.
-* Reciprocal Rank Fusion (RRF) and **cross-encoder reranking** (`bge-reranker-large`) to guarantee high-signal context before generation.
+![Retrieval Inspector](docs/screenshots/01_retrieval_inspector.png)
 
-### 3. Streaming Generation & Inline Attribution
-* Real-time Server-Sent Events (SSE) streaming.
-* Deterministic chunk-level citation tags (`[1]`, `[2]`) mapped directly to retrieved chunks.
-* Interactive slide-over citation drawer showing source file, chunk text, and similarity confidence scores.
+---
 
-### 4. Automated LLM-as-Judge Evaluation
-* Every user interaction is asynchronously evaluated across 4 core dimensions:
-  * **Faithfulness**: Are claims strictly supported by retrieved context?
-  * **Answer Relevance**: Does the response directly address the user query?
-  * **Context Precision**: Are high-relevance chunks ranked at the top?
-  * **Context Recall**: Was all necessary reference ground truth retrieved?
-* Real-time Redis pub/sub streaming directly to the **Live Evaluation Feed** without adding latency to user responses.
+### 2. Empirical A/B Pipeline Comparison & Answer Diff
+*Compare two pipeline configurations side-by-side on identical queries to evaluate latency differences, chunk ranking divergences, and token-level output diffs.*
 
-### 5. Stateful Pipeline Management & A/B Comparison
-* Create, configure, version, and clone independent RAG pipelines.
-* Live 7-day query volume sparklines, P50/P95 latency percentiles, and quality distributions from PostgreSQL.
-* Side-by-side **Compare Mode** to evaluate two pipeline configurations on identical prompts simultaneously.
+![A/B Compare Mode](docs/screenshots/02_ab_compare_mode.png)
 
-### 6. Closed-Loop Dataset Curation (SFT & DPO)
-* Automated candidate extraction for pairs scoring $\ge 80\%$ quality.
-* Strict automated validation checklist: PII removal, citation verification, response token range (50–2,000 tokens).
-* One-click dataset export to **SFT JSONL** (ChatML format) and **DPO JSONL** (prompt, chosen, rejected) for fine-tuning.
+---
+
+### 3. Streaming Generation with Deterministic Citations
+*Token-by-token streaming over Server-Sent Events with clickable citation chips `[Source X]` mapping to raw document passages, page numbers, and similarity scores.*
+
+![Streaming & Citation Drawer](docs/screenshots/03_streaming_citation_drawer.png)
+
+---
+
+## Key Capabilities
+
+### 1. Multi-Format Ingestion & Dual Indexing
+* Extract and normalize documents across **PDF**, **DOCX**, **CSV**, **PPTX**, **OCR images** (Tesseract), and **Web URLs**.
+* Configurable chunking strategies with token overlap.
+* Dual indexing: stores high-dimensional dense embeddings in **PostgreSQL `pgvector`** alongside **PostgreSQL Full-Text Search (BM25)** Cover Density indices (`ts_rank_cd`).
+
+### 2. Hybrid Retrieval & Reranking Architecture
+* **Dense Search (`pgvector`)**: Semantic conceptual similarity across unstructured knowledge.
+* **Sparse Search (BM25)**: Exact token recall for acronyms, part numbers, and error codes.
+* **Reciprocal Rank Fusion (RRF)**: Scale-invariant mathematical rank merging ($1 / (60 + \text{rank})$).
+* **Cross-Encoder Reranking**: Deep query-passage attention scoring before fitting within token budgets.
+
+### 3. Automated LLM-as-a-Judge Telemetry
+* Every run is asynchronously evaluated across 4 core dimensions without adding latency to user responses:
+  * **Faithfulness**: Are claims strictly entailed by the retrieved context?
+  * **Answer Relevance**: Does the response directly address the user's intent?
+  * **Context Precision**: Are high-signal chunks ranked at the top of the context?
+  * **Context Recall**: Was all necessary ground truth information retrieved?
+* Real-time Redis pub/sub streaming directly to the **Live Evaluation Feed**.
+
+### 4. Closed-Loop Dataset Curation (SFT & DPO)
+* Automated extraction of production interactions scoring $\ge 80\%$ quality.
+* Strict validation checklist: PII filtering, citation check, and response length boundaries (50–2,000 tokens).
+* One-click dataset export to **SFT JSONL** (ChatML format) and **DPO JSONL** (prompt, chosen, rejected) for downstream model fine-tuning.
 
 ---
 
@@ -98,6 +112,45 @@ Most Retrieval-Augmented Generation (RAG) implementations stop at connecting a d
 
 ---
 
+## AI vs. Deterministic Engineering
+
+NeuroFlow applies deliberate engineering judgment regarding where probabilistic AI belongs and where deterministic systems engineering is superior:
+
+| Subsystem | Approach | Technical Justification |
+|---|---|---|
+| **Document Parsing & Chunking** | **Deterministic** | Fast, zero token cost, reproducible text boundaries, zero hallucination. |
+| **Dense Vector Search** | **AI-Native** | High-dimensional semantic recall across conceptual and paraphrased queries. |
+| **Sparse Lexical Search** | **Deterministic** | Exact keyword precision, acronyms, and product IDs via PostgreSQL `tsvector`. |
+| **Rank Fusion (RRF)** | **Deterministic** | Pure scale-invariant rank math ($1/(k + r)$) without noisy model re-scoring. |
+| **Citation Attribution** | **Deterministic** | Regex AST parsing and database chunk UUID verification to eliminate phantom URLs. |
+| **Response Generation** | **AI-Native** | Natural language reasoning, synthesis, and fluent multi-source summarization. |
+| **LLM-as-a-Judge Evaluation** | **AI-Native** | Claim decomposition and context entailment verification across 4 core metrics. |
+| **Job Queue & Rate Limiting** | **Deterministic** | Redis token-bucket rate limiting and ARQ async worker dispatching. |
+
+---
+
+## What Broke at 2:00 AM (Systems Failure Log)
+
+### 1. Cascading Upstream Rate Limits (429) & UI Freezes
+* **What Broke:** Under consecutive queries, the UI hung for 30+ seconds before returning generic fallback text.
+* **Root Cause:** The query path executed sequential LLM calls (query expansion, reranking across 20 candidates, generation, and evaluation). When upstream endpoints hit rate limits (HTTP 429), compounding HTTP read timeouts froze the request loop.
+* **Diagnosis:** Identified compounding `httpx.ReadTimeout` exceptions and an `OPEN` circuit breaker state in Redis while the generator was blocked.
+* **Fix:** Enforced strict 2.0-second `asyncio.wait_for` timeout guards on auxiliary LLM calls with instant lexical fallback, decoupled evaluation into background Redis ARQ workers, and built a local structured RAG context synthesizer to stream grounded answers over SSE during provider outages.
+
+### 2. Sparse Retrieval Zero-Recall Bug Due to Strict Boolean Conjunctions
+* **What Broke:** Complex natural language queries in the Query Playground returned 0 sparse chunks, collapsing hybrid fusion into single-mode dense retrieval.
+* **Root Cause:** PostgreSQL's `plainto_tsquery('english', query)` constructs strict `AND` conjunctions across all tokens. If an indexed chunk lacked even one token, the `@@` operator evaluated to `false`.
+* **Diagnosis:** Observed that `ts_rank_cd` produced non-zero relevance scores for partial matches, but the `WHERE @@ plainto_tsquery` clause eliminated them before ranking.
+* **Fix:** Upgraded `Retriever.sparse_retrieval` to use `websearch_to_tsquery('english', query)` with an `OR` condition against `plainto_tsquery`, plus a secondary fallback sorting all chunks by `ts_rank_cd` with a limit constraint.
+
+### 3. Async SSE Stream Socket Leaks & Uvicorn Deadlocks
+* **What Broke:** During active browser sessions with Server-Sent Events (SSE), file saves or worker restarts caused Uvicorn to hang on port 8000.
+* **Root Cause:** Long-lived streaming generators held open database pool handles and unclosed TCP sockets when clients disconnected or when hot reloads triggered, exhausting available pool connections.
+* **Diagnosis:** Traced lingering `CLOSE_WAIT` sockets tied to the ASGI process via `Get-NetTCPConnection`.
+* **Fix:** Implemented a 15-second keepalive watchdog loop with explicit `StopAsyncIteration` error handling and enclosed connection acquisitions inside bounded `async with db_pool.acquire()` context managers.
+
+---
+
 ## Tech Stack
 
 | Domain | Technology | Purpose |
@@ -106,7 +159,7 @@ Most Retrieval-Augmented Generation (RAG) implementations stop at connecting a d
 | **Styling** | Tailwind CSS, Lucide Icons | Responsive modern dark-theme design system (`#0b0f19`) |
 | **Backend API** | Python 3.11+, FastAPI, Pydantic V2 | High-throughput asynchronous REST & SSE streaming server |
 | **Relational & Vector** | PostgreSQL 16 + pgvector | ACID relational persistence & high-dimensional vector search |
-| **Keyword Search** | BM25 Engine | Sparse keyword frequency scoring & term matching |
+| **Keyword Search** | PostgreSQL Full-Text Search (`tsvector`, `ts_rank_cd`) | Sparse keyword frequency scoring & token proximity matching |
 | **Message Queue** | Redis 7 + ARQ Distributed Workers | Non-blocking background evaluation and dataset export jobs |
 | **Observability** | OpenTelemetry, Prometheus, Jaeger, MLflow | Distributed tracing, latency percentiles, and model run tracking |
 | **Containerization** | Docker, Docker Compose | Reproducible local and production infrastructure orchestration |
