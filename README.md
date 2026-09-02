@@ -223,10 +223,10 @@ Open **[http://localhost:3000](http://localhost:3000)** in your browser.
 
 ---
 
-## Builder
+## Author
 
 **Sanjana Patil**  
-*Full-Stack & AI Systems Engineer · Creator of NeuroFlow*
+*Computer Science & Engineering | Building AI and Distributed Systems*
 
 * **GitHub**: [@Sanjana0019](https://github.com/Sanjana0019)
 * **LinkedIn**: [sanjana-patil-dev](https://www.linkedin.com/in/sanjana-patil-dev/)
