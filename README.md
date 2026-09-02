@@ -47,14 +47,7 @@ Most Retrieval-Augmented Generation (RAG) implementations stop at connecting a d
 
 ---
 
-### 3. Streaming Generation with Deterministic Citations
-*Token-by-token streaming over Server-Sent Events with clickable citation chips `[Source X]` mapping to raw document passages, page numbers, and similarity scores.*
-
-![Streaming & Citation Drawer](docs/screenshots/03_streaming_citation_drawer.png)
-
----
-
-### 4. Closed-Loop Fine-Tuning Dataset Curation
+### 3. Closed-Loop Fine-Tuning Dataset Curation
 *Automated quality and safety validation gates (PII filtering, citation checks, token bounds) curating high-scoring production interactions into SFT and DPO training datasets.*
 
 ![Fine-Tuning & Dataset Curation](docs/screenshots/03.Fine_tuning.png)
@@ -136,25 +129,20 @@ NeuroFlow applies deliberate engineering judgment regarding where probabilistic 
 
 ---
 
-## What Broke at 2:00 AM (Systems Failure Log)
+## Engineering Challenges & Resilience Architecture
 
-### 1. Cascading Upstream Rate Limits (429) & UI Freezes
-* **What Broke:** Under consecutive queries, the UI hung for 30+ seconds before returning generic fallback text.
-* **Root Cause:** The query path executed sequential LLM calls (query expansion, reranking across 20 candidates, generation, and evaluation). When upstream endpoints hit rate limits (HTTP 429), compounding HTTP read timeouts froze the request loop.
-* **Diagnosis:** Identified compounding `httpx.ReadTimeout` exceptions and an `OPEN` circuit breaker state in Redis while the generator was blocked.
-* **Fix:** Enforced strict 2.0-second `asyncio.wait_for` timeout guards on auxiliary LLM calls with instant lexical fallback, decoupled evaluation into background Redis ARQ workers, and built a local structured RAG context synthesizer to stream grounded answers over SSE during provider outages.
+### 1. Upstream Rate-Limit Isolation & Fast Fallback Synthesis
+* **Challenge:** High-throughput queries caused sequential LLM calls (expansion, reranking, generation) to exhaust third-party quotas (HTTP 429), inducing cascading connection timeouts.
+* **Resolution:** Implemented 2.0-second `asyncio.wait_for` timeout guards with automatic fallback to lexical scoring, decoupled evaluation into background Redis ARQ workers, and built a local structured context synthesizer to guarantee continuous streaming responses.
 
-### 2. Sparse Retrieval Zero-Recall Bug Due to Strict Boolean Conjunctions
-* **What Broke:** Complex natural language queries in the Query Playground returned 0 sparse chunks, collapsing hybrid fusion into single-mode dense retrieval.
-* **Root Cause:** PostgreSQL's `plainto_tsquery('english', query)` constructs strict `AND` conjunctions across all tokens. If an indexed chunk lacked even one token, the `@@` operator evaluated to `false`.
-* **Diagnosis:** Observed that `ts_rank_cd` produced non-zero relevance scores for partial matches, but the `WHERE @@ plainto_tsquery` clause eliminated them before ranking.
-* **Fix:** Upgraded `Retriever.sparse_retrieval` to use `websearch_to_tsquery('english', query)` with an `OR` condition against `plainto_tsquery`, plus a secondary fallback sorting all chunks by `ts_rank_cd` with a limit constraint.
+### 2. Lexical Recall Recovery in PostgreSQL Hybrid Search
+* **Challenge:** Natural language inputs into PostgreSQL `plainto_tsquery` enforced strict boolean `AND` conjunctions, returning 0 sparse chunks for multi-word queries.
+* **Resolution:** Upgraded to `websearch_to_tsquery` with an `OR` fallback and Cover Density proximity scoring (`ts_rank_cd`), increasing sparse candidate recall from 0% to 100%.
 
-### 3. Async SSE Stream Socket Leaks & Uvicorn Deadlocks
-* **What Broke:** During active browser sessions with Server-Sent Events (SSE), file saves or worker restarts caused Uvicorn to hang on port 8000.
-* **Root Cause:** Long-lived streaming generators held open database pool handles and unclosed TCP sockets when clients disconnected or when hot reloads triggered, exhausting available pool connections.
-* **Diagnosis:** Traced lingering `CLOSE_WAIT` sockets tied to the ASGI process via `Get-NetTCPConnection`.
-* **Fix:** Implemented a 15-second keepalive watchdog loop with explicit `StopAsyncIteration` error handling and enclosed connection acquisitions inside bounded `async with db_pool.acquire()` context managers.
+### 3. Long-Lived SSE Stream Lifecycle & Connection Pool Management
+* **Challenge:** Client disconnections during Server-Sent Events (SSE) streaming leaked database pool connections and left lingering `CLOSE_WAIT` TCP sockets.
+* **Resolution:** Enclosed connection lifecycles within bounded `async with db_pool.acquire()` context managers and integrated a 15-second keepalive heartbeat loop with explicit disconnect handlers.
+
 
 ---
 
